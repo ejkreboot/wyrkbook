@@ -1,8 +1,9 @@
 import { fail } from '@sveltejs/kit';
 import { addWeeks, weekStart, weeksBetween } from '$lib/week';
 import type { Actions, PageServerLoad } from './$types';
-import type { WeeklyGoal } from '$lib/types';
+import type { PlanImport, WeeklyGoal } from '$lib/types';
 import { describeDiff, planDiff, type PlanWeek } from '$lib/server/planDiff';
+import { settleIfExpired } from '$lib/server/planImport';
 
 const MAX_WEEKS = 52;
 const DEFAULT_WEEKS = 18;
@@ -54,7 +55,43 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 		goals = (data ?? []) as WeeklyGoal[];
 	}
 
-	return { classId, start, count, weeks, goals, currentWeek: weekStart() };
+	/*
+	 * A file read outlives the page that started it, so the planner picks up
+	 * whatever is in flight or waiting for this class rather than assuming the
+	 * teacher is still sitting on the tab that kicked it off.
+	 */
+	let pending: PlanImport | null = null;
+	if (classId) {
+		const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+		const { data } = await locals.supabase
+			.from('plan_import')
+			.select('*')
+			.eq('class_id', classId)
+			.in('status', ['running', 'ready'])
+			.gte('created_at', dayAgo)
+			.order('created_at', { ascending: false })
+			.limit(1)
+			.maybeSingle();
+
+		if (data) pending = await settleIfExpired(data as PlanImport, locals.supabase);
+	}
+
+	return {
+		classId,
+		start,
+		count,
+		weeks,
+		goals,
+		currentWeek: weekStart(),
+		pendingImport: pending && {
+			id: pending.id,
+			status: pending.status,
+			file_name: pending.file_name,
+			notes: pending.notes ?? '',
+			weeks: pending.plan ?? [],
+			error: pending.error ?? ''
+		}
+	};
 };
 
 export const actions: Actions = {

@@ -68,3 +68,10 @@ export function describeDiff(d: PlanDiff): string {
 	].filter(Boolean);
 	return parts.length ? `Saved — ${parts.join(', ')}.` : 'No changes to save.';
 }
+
+/**
+ * The planner never shows more than a year at a time — a longer box list is
+ * unscrollable, and a school year fits. Enforced by the plan page and by the
+ * file importer, which will happily be asked for "spread over 60 weeks".
+ */
+export const MAX_PLAN_WEEKS = 52;

@@ -76,6 +76,9 @@ src/
     server/
       anthropic.ts            lazy API client
       vision.ts               upload validation, base64, JSON recovery
+      documents.ts            PDF/text/photo uploads as content blocks
+      planImport.ts           the term-import prompt and its output hardening
+      deferred.ts             work that outlives the response that started it
       supabaseAdmin.ts        service-role client
       users.ts                auth user + profile provisioning
       goals.ts                weekly-goal actions, shared by two routes
@@ -85,7 +88,8 @@ src/
     admin/                    this week, calendar, classes, students, assignments
     student/                  available work, work session, results
     s/[id]/                   QR target — opens or resumes a work session
-    api/{extract,hint,grade}/ the three Anthropic calls
+    api/{extract,hint,grade,plan-import}/
+                              the Anthropic calls
 supabase/migrations/          schema, RLS, storage buckets
 scripts/seed-sysadmin.ts      one-time bootstrap
 ```
@@ -117,6 +121,93 @@ already ticked off.
 
 Known limit: moving a goal from one week to another is a delete plus an insert,
 so a completed goal that moves weeks comes back unticked.
+
+### Starting from the publisher's file
+
+Typing forty weeks of a science course out of a PDF is the worst hour of the
+school year, so **Start from a file** on the planner does it: upload the lesson
+list, syllabus or schedule, say what the file cannot know, and the boxes fill in.
+
+The guidance box is the whole interface. A publisher's lesson list is a daily
+plan for an unspecified number of weeks with no holidays in it; only the teacher
+knows the term is forty weeks long, that the quizzes in the right-hand column
+belong with the chapter they follow, and that nothing happens the week of
+Christmas. That goes in the box, in prose.
+
+Two things keep it honest:
+
+- **Weeks are numbered, not dated.** The model returns `{week: 12, goals: [...]}`
+  and `planImport.ts` maps the number onto a Monday. It is shown the calendar so
+  "take Thanksgiving off" lands in the right box, but it never does date
+  arithmetic, and a week number outside the range is dropped rather than
+  written somewhere surprising.
+- **Nothing is saved.** A read fills the text boxes and stops. The teacher edits
+  them and presses Save plan, which goes through the same reconciliation as any
+  other edit — so re-importing over a term already underway does not silently
+  wipe the `done` ticks on work that matched. A proposed plan lives in
+  `plan_import` as jsonb precisely so that it is not a set of goals yet.
+
+#### The read is a job, not a request
+
+Reading the Novare *Physical Science* lesson list and pacing it over a school
+year takes about ninety seconds. That is a fine trade against the hour it takes
+by hand, but far too long to hold a request open and watch a spinner. So the
+upload starts a job and returns:
+
+```
+POST /api/plan-import       insert a plan_import row, defer the model call,
+                            return { id } in about a second
+GET  /api/plan-import/<id>  a cheap row read, polled every 3s
+POST /api/plan-import/<id>  mark it applied once its plan is in the boxes
+```
+
+The deferred half runs under `waitUntil` from `@vercel/functions`, which extends
+the function invocation past the response it already sent. The teacher can close
+the tab; the planner picks the job back up on the next visit, because what is in
+flight lives in the row rather than in the page. A read that finishes while they
+are elsewhere is *offered* rather than applied, since the boxes may hold edits
+they have not saved.
+
+Two failure modes are handled without a queue or a cron:
+
+- **The function is killed.** `waitUntil` promises die with their invocation, so
+  a row could sit at `running` forever with nobody left to write to it. The row
+  stores `expires_at`, taken from `getDeadline()` — the exact instant Vercel will
+  terminate the invocation — and any read of a `running` row past that settles it
+  as failed. That is the whole recovery mechanism.
+- **The poll drops.** A failed poll is retried, not treated as a failed job. The
+  job is on the server; the browser is only watching.
+
+Off-platform — `vite dev` — there is no invocation to extend and `waitUntil` does
+nothing, so `deferred.ts` lets the promise run loose instead. The dev server is a
+long-lived process, so it behaves the same.
+
+The `maxDuration: 300` on the upload route covers the deferred work too:
+`waitUntil` time counts against it like any other. Uploads are capped at 4 MB —
+not an Anthropic limit (theirs is 32 MB) but a Vercel one, whose 4.5 MB request
+body ceiling is enforced at the edge, where a friendlier message cannot reach.
+
+#### Which model
+
+Measured on the Novare lesson list, same guidance, all three complete and
+correct — every quiz, every lab, and the break weeks in the right places:
+
+| | wall clock | output tokens | cost |
+| --- | --- | --- | --- |
+| Opus 5 | 87s | 9,633 | $0.30 |
+| Sonnet 5 | 117s | 16,040 | $0.28 |
+| Haiku 4.5 | 117s | 19,902 | $0.11 |
+
+There is no cheaper-and-faster option: output tokens dominate both latency and
+cost, and Opus is simply terser — it writes `Section 8.4: Unit Conversions;
+math principles (p. 149)` where the others emit a line per source row. Opus 5 is
+both the fastest and, against Sonnet's standard rates, about the same price.
+
+`npm run test:import -- <file> "<guidance>"` runs a real document through the
+same prompt and prints the plan to the terminal, which is the only way to tell
+whether it can actually read a two-column lesson list. It costs an API call and
+touches no database. `MODEL=claude-haiku-4-5 npm run test:import -- …` runs it
+past a different model.
 
 ## Security model
 

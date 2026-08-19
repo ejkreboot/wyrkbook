@@ -113,6 +113,26 @@ export const CLASS_COLORS = [
 	'brown'
 ] as const;
 
+export type PlanImportStatus = 'running' | 'ready' | 'failed' | 'applied';
+
+/** One AI read of a course document, proposed but not yet saved as goals. */
+export type PlanImport = {
+	id: string;
+	org_id: string;
+	class_id: string;
+	created_by: string | null;
+	file_name: string;
+	guidance: string | null;
+	week_start: string;
+	status: PlanImportStatus;
+	expires_at: string;
+	notes: string | null;
+	plan: { week_start: string; lines: string[] }[] | null;
+	error: string | null;
+	created_at: string;
+	finished_at: string | null;
+};
+
 /**
  * Answers live apart from the rows students can read. See migration 004 — RLS is
  * row-level, so an `answer` column on `problem` is readable by anyone who can

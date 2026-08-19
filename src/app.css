@@ -508,6 +508,21 @@ tbody tr:hover { background: var(--paper-2); }
 	.plan-when { flex-direction: column; gap: 0; padding-top: .45rem; }
 }
 
+/* The file importer folds itself away; the summary row reads as a card head. */
+.import-panel > summary {
+	display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+	cursor: pointer;
+	list-style: none;
+}
+.import-panel > summary::-webkit-details-marker { display: none; }
+.import-panel > summary::before {
+	content: '▸';
+	color: var(--ink-3); font-size: .8rem;
+	transition: transform .12s ease;
+}
+.import-panel[open] > summary::before { transform: rotate(90deg); }
+.import-panel > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
 /* ============================================================================
    PRINT — the assignment sheet.
    Page 1+ hold the problems; a run of blank ruled pages follows so the student
