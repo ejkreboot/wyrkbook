@@ -17,6 +17,7 @@
 			return [
 				{ href: '/admin', label: 'This week' },
 				{ href: '/admin/calendar', label: 'Calendar' },
+				{ href: '/admin/plan', label: 'Plan' },
 				{ href: '/admin/assignments', label: 'Assignments' },
 				{ href: '/admin/classes', label: 'Classes' },
 				{ href: '/admin/students', label: 'Students' }

@@ -453,6 +453,57 @@ tbody tr:hover { background: var(--paper-2); }
 
 .print-only { display: none; }
 
+
+/* ---------------------------------------------------------------- term planner */
+
+/* Sticky so the class chip and Save stay reachable during a 36-week scroll. */
+.plan-head, .plan-foot {
+	display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+	padding: .7rem .85rem;
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+}
+.plan-head { position: sticky; top: 56px; z-index: 20; margin-bottom: .75rem; }
+.plan-foot { margin-top: .75rem; }
+
+.plan-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+
+.plan-week {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: .3rem;
+	padding: .6rem .7rem;
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-left: 3px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+}
+.plan-week.is-current { border-left-color: var(--accent); background: var(--accent-soft); }
+
+.plan-when { display: flex; align-items: baseline; gap: .5rem; }
+.plan-date { font-family: var(--serif); font-size: .95rem; font-weight: 600; color: var(--ink-2); }
+.plan-now {
+	font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+	color: var(--accent);
+}
+
+.plan-box {
+	min-height: 0;
+	font-size: .92rem; line-height: 1.5;
+	background: var(--paper);
+	resize: vertical;
+}
+.plan-week.is-current .plan-box { background: var(--card); }
+
+/* Two columns from tablet up: the date label sits beside its box rather than
+   above it, which keeps a long term scannable. */
+@media (min-width: 720px) {
+	.plan-week { grid-template-columns: 130px 1fr; gap: .75rem; align-items: start; }
+	.plan-when { flex-direction: column; gap: 0; padding-top: .45rem; }
+}
+
 /* ============================================================================
    PRINT — the assignment sheet.
    Page 1+ hold the problems; a run of blank ruled pages follows so the student

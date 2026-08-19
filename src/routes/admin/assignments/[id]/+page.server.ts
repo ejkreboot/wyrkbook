@@ -11,21 +11,36 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	if (!assignment) error(404, 'Assignment not found.');
 
-	const [{ data: problems }, { data: submissions }] = await Promise.all([
+	const [{ data: problems }, { data: submissions }, { data: key }] = await Promise.all([
 		locals.supabase.from('problem').select('*').eq('assignment_id', params.id).order('sort_order'),
 		locals.supabase
 			.from('submission')
 			.select('*, profile:student_id(display_name)')
 			.eq('assignment_id', params.id)
-			.order('created_at', { ascending: false })
+			.order('created_at', { ascending: false }),
+		// Both sidecars are admin-only at the RLS layer (migration 004).
+		locals.supabase
+			.from('assignment_key')
+			.select('answer_key')
+			.eq('assignment_id', params.id)
+			.maybeSingle()
 	]);
+
+	// Needs the problem ids, so it cannot join the batch above.
+	const ids = (problems ?? []).map((p) => p.id);
+	const { data: answers } = ids.length
+		? await locals.supabase.from('problem_answer').select('problem_id, answer').in('problem_id', ids)
+		: { data: [] };
+
+	const answerFor = new Map((answers ?? []).map((a) => [a.problem_id, a.answer]));
 
 	const base = assignment.week_start ?? weekStart();
 	const weekOptions = Array.from({ length: 11 }, (_, i) => addWeeks(base, i - 4));
 
 	return {
-		assignment,
-		problems: problems ?? [],
+		// Re-attached for the editor only; the column itself no longer exists.
+		assignment: { ...assignment, answer_key: key?.answer_key ?? null },
+		problems: (problems ?? []).map((p) => ({ ...p, answer: answerFor.get(p.id) ?? null })),
 		submissions: submissions ?? [],
 		weekOptions
 	};
@@ -35,13 +50,13 @@ export const actions: Actions = {
 	/** Saves the assignment's fields and every problem in one pass. */
 	save: async ({ request, locals, params }) => {
 		const form = await request.formData();
+		const orgId = locals.profile!.org_id;
 
 		const patch = {
 			title: String(form.get('title') ?? '').trim(),
 			instructions: String(form.get('instructions') ?? '').trim() || null,
 			class_id: String(form.get('class_id') ?? ''),
 			week_start: String(form.get('week_start') ?? '') || null,
-			answer_key: String(form.get('answer_key') ?? '').trim() || null,
 			hint_penalty: Number(form.get('hint_penalty') ?? 5),
 			work_pages: Math.min(Math.max(Number(form.get('work_pages') ?? 4), 0), 20)
 		};
@@ -54,6 +69,15 @@ export const actions: Actions = {
 			.update(patch)
 			.eq('id', params.id);
 		if (aError) return fail(400, { message: aError.message });
+
+		const answerKey = String(form.get('answer_key') ?? '').trim();
+		if (answerKey) {
+			await locals.supabase
+				.from('assignment_key')
+				.upsert({ assignment_id: params.id, org_id: orgId, answer_key: answerKey });
+		} else {
+			await locals.supabase.from('assignment_key').delete().eq('assignment_id', params.id);
+		}
 
 		let problems: {
 			id: string;
@@ -76,19 +100,35 @@ export const actions: Actions = {
 
 		for (const [i, p] of problems.entries()) {
 			const row = {
-				org_id: locals.profile!.org_id,
+				org_id: orgId,
 				assignment_id: params.id,
 				label: String(p.label ?? i + 1).slice(0, 24),
 				body: String(p.body ?? '').trim(),
-				answer: p.answer?.trim() || null,
 				points: Number.isFinite(Number(p.points)) ? Number(p.points) : 1,
 				included: p.included !== false,
 				sort_order: i
 			};
-			if (p.id) {
-				await locals.supabase.from('problem').update(row).eq('id', p.id);
+
+			let problemId = p.id;
+			if (problemId) {
+				await locals.supabase.from('problem').update(row).eq('id', problemId);
 			} else {
-				await locals.supabase.from('problem').insert(row);
+				const { data: created } = await locals.supabase
+					.from('problem')
+					.insert(row)
+					.select('id')
+					.single();
+				problemId = created?.id;
+			}
+
+			if (!problemId) continue;
+			const answer = p.answer?.trim();
+			if (answer) {
+				await locals.supabase
+					.from('problem_answer')
+					.upsert({ problem_id: problemId, org_id: orgId, answer });
+			} else {
+				await locals.supabase.from('problem_answer').delete().eq('problem_id', problemId);
 			}
 		}
 

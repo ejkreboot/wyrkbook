@@ -13,7 +13,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const [{ data: results }, { data: pages }, { data: hints }] = await Promise.all([
 		locals.supabase
 			.from('problem_result')
-			.select('*, problem(label, body, answer, points, sort_order)')
+			.select('*, problem(id, label, body, points, sort_order)')
 			.eq('submission_id', params.id),
 		locals.supabase
 			.from('submission_page')
@@ -40,7 +40,23 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		(a, b) => (a.problem?.sort_order ?? 0) - (b.problem?.sort_order ?? 0)
 	);
 
-	return { submission, results: ordered, pageUrls, hints: hints ?? [] };
+	// Answers live in an admin-only sidecar; this page is admin-only, so the
+	// caller's own client can read it and RLS still does the enforcing.
+	const problemIds = ordered.map((r) => r.problem?.id).filter((id): id is string => !!id);
+	const { data: answers } = problemIds.length
+		? await locals.supabase
+				.from('problem_answer')
+				.select('problem_id, answer')
+				.in('problem_id', problemIds)
+		: { data: [] };
+	const answerFor = new Map((answers ?? []).map((a) => [a.problem_id, a.answer]));
+
+	const withAnswers = ordered.map((r) => ({
+		...r,
+		problem: r.problem ? { ...r.problem, answer: answerFor.get(r.problem.id) ?? null } : null
+	}));
+
+	return { submission, results: withAnswers, pageUrls, hints: hints ?? [] };
 };
 
 export const actions: Actions = {

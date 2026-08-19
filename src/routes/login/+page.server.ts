@@ -52,8 +52,19 @@ export const actions: Actions = {
 		const token = String(form.get('token') ?? '').replace(/\D/g, '');
 		const next = String(form.get('next') ?? '');
 
-		if (token.length < 6) {
-			return fail(400, { stage: 'verify', email, next, message: 'Enter the 6-digit code.' });
+		/*
+		 * Deliberately not pinned to a digit count. Supabase's mailer_otp_length is
+		 * a project setting (currently 8), and hardcoding a length here means the
+		 * form silently rejects valid codes the moment that setting changes.
+		 * verifyOtp is the authority on whether a code is right.
+		 */
+		if (token.length < 4) {
+			return fail(400, {
+				stage: 'verify',
+				email,
+				next,
+				message: 'Enter the code from your email.'
+			});
 		}
 
 		const { error } = await locals.supabase.auth.verifyOtp({ email, token, type: 'email' });

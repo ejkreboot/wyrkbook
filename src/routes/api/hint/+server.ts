@@ -50,12 +50,27 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const { data: problems } = await locals.supabase
 		.from('problem')
-		.select('id, label, body, answer')
+		.select('id, label, body')
 		.eq('assignment_id', assignment.id)
 		.eq('included', true)
 		.order('sort_order');
 
 	const target = problems?.find((p) => p.id === problemId) ?? null;
+
+	/*
+	 * The answer is fetched with the service role because the caller is a student
+	 * and students have no RLS policy on problem_answer at all. It is used only to
+	 * judge whether they are on track — the system prompt forbids revealing it.
+	 */
+	let targetAnswer: string | null = null;
+	if (target) {
+		const { data: row } = await supabaseAdmin
+			.from('problem_answer')
+			.select('answer')
+			.eq('problem_id', target.id)
+			.maybeSingle();
+		targetAnswer = row?.answer ?? null;
+	}
 	const images = await filesToImageParts(files);
 
 	const context = [
@@ -63,7 +78,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		target
 			? `The student says they are working on problem ${target.label}:\n${target.body}`
 			: `The student did not say which problem they are on. Work out which one from the photo. The problems in this set are:\n${(problems ?? []).map((p) => `${p.label}. ${p.body}`).join('\n')}`,
-		target?.answer ? `The correct answer is "${target.answer}" — use it to judge whether they are on track, but never reveal it.` : '',
+		targetAnswer
+			? `The correct answer is "${targetAnswer}" — use it to judge whether they are on track, but never reveal it.`
+			: '',
 		question ? `The student asks: "${question}"` : '',
 		'This photo shows their work so far. Give them one hint.'
 	]

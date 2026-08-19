@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Your wyrkbook sign-in code</title>
+<!--[if mso]>
+<xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+<![endif]-->
+<style>
+  /* Clients that support <style> get dark mode and a little polish.
+     Everything load-bearing is also inlined below, so stripping this is safe. */
+  .code-box { transition: none; }
+
+  @media (prefers-color-scheme: dark) {
+    .bg      { background-color: #17140f !important; }
+    .card    { background-color: #201c16 !important; border-color: #3a332a !important; }
+    .ink     { color: #f2ece2 !important; }
+    .ink-2   { color: #c8bfae !important; }
+    .ink-3   { color: #9a9082 !important; }
+    .rule    { border-color: #3a332a !important; }
+    .code-box{ background-color: #2a251d !important; border-color: #574c3d !important; }
+    .code    { color: #ffb08a !important; }
+    .accent  { color: #ff9b6e !important; }
+    .foot    { color: #857c6a !important; }
+  }
+
+  @media only screen and (max-width: 620px) {
+    .pad-x   { padding-left: 24px !important; padding-right: 24px !important; }
+    .code    { font-size: 30px !important; letter-spacing: 0.22em !important; }
+    .h1      { font-size: 24px !important; }
+  }
+</style>
+</head>
+
+<body class="bg" style="margin:0; padding:0; background-color:#faf7f2; -webkit-font-smoothing:antialiased;">
+
+  <!-- Inbox preview line. Hidden in the body, shown next to the subject. -->
+  <div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+    Your sign-in code is {{ .Token }} — it expires in 60 minutes.
+    &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
+  </div>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="bg" style="background-color:#faf7f2;">
+    <tr>
+      <td align="center" style="padding:40px 12px;">
+
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px; max-width:600px;">
+
+          <!-- ---------------------------------------------------- wordmark -->
+          <tr>
+            <td align="center" style="padding:0 0 24px 0;">
+              <span class="ink" style="font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif; font-size:26px; font-weight:600; color:#241f1a; letter-spacing:-0.01em;">
+                wyrkbook<span class="accent" style="color:#9c4221;">.</span>
+              </span>
+            </td>
+          </tr>
+
+          <!-- ---------------------------------------------------- card -->
+          <tr>
+            <td class="card" style="background-color:#ffffff; border:1px solid #e2dacd; border-radius:12px;">
+
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+
+                <!-- heading -->
+                <tr>
+                  <td class="pad-x" style="padding:40px 44px 0 44px;">
+                    <h1 class="h1 ink" style="margin:0 0 10px 0; font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif; font-size:28px; line-height:1.2; font-weight:600; color:#241f1a;">
+                      Your sign-in code
+                    </h1>
+                    <p class="ink-2" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:15px; line-height:1.55; color:#57503f;">
+                      Enter this code in wyrkbook to finish signing in. No password needed.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- the code -->
+                <tr>
+                  <td class="pad-x" style="padding:28px 44px 0 44px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td class="code-box" align="center" style="background-color:#f3eee5; border:1px solid #cabfad; border-radius:10px; padding:26px 16px;">
+                          <div class="code" style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Courier New',monospace; font-size:38px; line-height:1.1; font-weight:700; color:#9c4221; letter-spacing:0.3em; text-indent:0.3em;">{{ .Token }}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- expiry -->
+                <tr>
+                  <td class="pad-x" align="center" style="padding:16px 44px 0 44px;">
+                    <p class="ink-3" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:13px; line-height:1.5; color:#857c6a;">
+                      This code expires in 60 minutes and can only be used once.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- rule -->
+                <tr>
+                  <td class="pad-x" style="padding:32px 44px 0 44px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr><td class="rule" style="border-top:1px solid #e2dacd; font-size:0; line-height:0;">&nbsp;</td></tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- security note -->
+                <tr>
+                  <td class="pad-x" style="padding:20px 44px 40px 44px;">
+                    <p class="ink-3" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:13px; line-height:1.6; color:#857c6a;">
+                      This code was requested for <span class="ink-2" style="color:#57503f; font-weight:600;">{{ .Email }}</span>.
+                      If that wasn&rsquo;t you, no action is needed &mdash; the code is useless without access to this inbox.
+                    </p>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+
+          <!-- ---------------------------------------------------- footer -->
+          <tr>
+            <td align="center" style="padding:24px 24px 0 24px;">
+              <p class="foot" style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.6; color:#857c6a;">
+                wyrkbook &middot; homeschool, organized by the week
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>

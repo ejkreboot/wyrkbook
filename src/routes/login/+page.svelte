@@ -79,7 +79,7 @@
 				<input type="hidden" name="email" value={email} />
 				<input type="hidden" name="next" value={form?.next ?? data.next} />
 				<div class="field">
-					<label for="token">6-digit code</label>
+					<label for="token">Sign-in code</label>
 					<!-- svelte-ignore a11y_autofocus -->
 					<input
 						id="token"
@@ -88,11 +88,10 @@
 						type="text"
 						inputmode="numeric"
 						autocomplete="one-time-code"
-						maxlength="6"
+						maxlength="10"
 						pattern="[0-9]*"
 						required
 						autofocus
-						placeholder="······"
 					/>
 				</div>
 				<button class="btn btn-primary btn-block" type="submit" disabled={sending}>

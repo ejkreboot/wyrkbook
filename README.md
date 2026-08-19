@@ -97,3 +97,56 @@ by the print stylesheet. Page size is US Letter. Ruled work pages are generated
 with a repeating CSS gradient at 8.4mm spacing, with a red left margin rule at
 20mm — that margin is what the grader reads to attribute work to a problem.
 The number of work pages is per-assignment (`work_pages`).
+
+## Planning a term
+
+`/admin/plan` is the bulk entry point for weekly goals: pick a class, a starting
+week and a length, and you get one text box per week with one goal per line.
+Paste a column straight out of a spreadsheet and it lands as one goal per row.
+
+Saving reconciles the boxes against what is stored rather than replacing it.
+This matters: a naive "delete the week and re-insert" would clear every `done`
+tick each time the planner was touched. `src/lib/server/planDiff.ts` matches
+lines to existing goals by title within the week, so an untouched line keeps its
+row — and therefore its completion state, its detail, and any linked assignment.
+Only genuinely new lines are inserted and genuinely deleted lines removed.
+
+Run `npm run test:plan` for the reconciliation tests, including the case that
+motivates the whole design: editing one line in a week where another goal is
+already ticked off.
+
+Known limit: moving a goal from one week to another is a delete plus an insert,
+so a completed goal that moves weeks comes back unticked.
+
+## Security model
+
+Audited against the live database with rolled-back transactions that impersonate
+a student (`set local role authenticated` + a forged `request.jwt.claims`), not
+by reading the policies and hoping. Migration `004_harden_rls.sql` closes four
+real holes the first pass left open:
+
+- **Answers were readable by students.** RLS is row-level, and PostgREST lets a
+  client select any column of a row it can see — so `?select=answer` returned
+  every answer for any published assignment. Column-level `GRANT`s cannot fix
+  this, because admins and students are both the `authenticated` role. Answers
+  now live in `problem_answer` / `assignment_key`, which have an admin-only
+  policy and no student policy at all. Grading reads them through the service
+  role inside the API handler; they never reach a student's client.
+- **Students could grade themselves.** The old `submission_student_update`
+  policy allowed `score = 100, status = 'graded', hint_penalty_total = 0`. Every
+  post-creation write to a submission is server-side, so students now have no
+  UPDATE policy.
+- **Students could start work on unpublished drafts.** The INSERT policy now
+  requires the assignment to be `published` and in their org.
+- **Students could enumerate every profile in the org**, including teacher
+  emails. Profile reads are admin-only plus your own row.
+
+`anon` has been stripped of all access — nothing here is public, and sign-in
+goes through GoTrue rather than PostgREST.
+
+Session isolation: no user data is held in module scope, no route sets a cache
+header, and `+layout.server.ts` deliberately does **not** return `cookies`. The
+usual `@supabase/ssr` SvelteKit recipe passes `cookies.getAll()` to a universal
+load, which serializes the auth token into the SSR HTML payload; nothing in this
+app talks to Supabase from the browser, so that client was removed entirely and
+the token stays server-side.

@@ -75,17 +75,36 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		id: string;
 		title: string;
 		instructions: string | null;
-		answer_key: string | null;
 	};
 
 	const { data: problems } = await locals.supabase
 		.from('problem')
-		.select('id, label, body, answer, points')
+		.select('id, label, body, points')
 		.eq('assignment_id', assignment.id)
 		.eq('included', true)
 		.order('sort_order');
 
 	if (!problems?.length) error(409, 'This assignment has no problems to grade.');
+
+	/*
+	 * Answers and the answer key come from the sidecar tables via the service
+	 * role: the caller is the student, and students have no policy on either
+	 * (migration 004). They never leave this handler.
+	 */
+	const [{ data: keyRow }, { data: answerRows }] = await Promise.all([
+		supabaseAdmin
+			.from('assignment_key')
+			.select('answer_key')
+			.eq('assignment_id', assignment.id)
+			.maybeSingle(),
+		supabaseAdmin
+			.from('problem_answer')
+			.select('problem_id, answer')
+			.in('problem_id', problems.map((p) => p.id))
+	]);
+
+	const answerKey = keyRow?.answer_key ?? null;
+	const answerFor = new Map((answerRows ?? []).map((a) => [a.problem_id, a.answer]));
 
 	const images = await filesToImageParts(files);
 
@@ -108,10 +127,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		assignment.instructions ? `Instructions given to the student: ${assignment.instructions}` : '',
 		'The problems in this assignment are:',
 		problems.map((p) => `${p.label}. ${p.body}`).join('\n'),
-		assignment.answer_key
-			? `The teacher's answer key:\n${assignment.answer_key}\nGrade against this key.`
-			: problems.some((p) => p.answer)
-				? `Known answers:\n${problems.filter((p) => p.answer).map((p) => `${p.label}. ${p.answer}`).join('\n')}`
+		answerKey
+			? `The teacher's answer key:\n${answerKey}\nGrade against this key.`
+			: answerFor.size
+				? `Known answers:\n${problems
+						.filter((p) => answerFor.get(p.id))
+						.map((p) => `${p.label}. ${answerFor.get(p.id)}`)
+						.join('\n')}`
 				: 'There is no answer key. Work each problem yourself and grade against your own solution.',
 		`The photos are the student's work. Return one result for each of the ${problems.length} problems above.`
 	]

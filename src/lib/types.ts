@@ -31,7 +31,6 @@ export type Assignment = {
 	instructions: string | null;
 	week_start: string | null;
 	status: AssignmentStatus;
-	answer_key: string | null;
 	hint_penalty: number;
 	work_pages: number;
 	created_by: string | null;
@@ -44,7 +43,6 @@ export type Problem = {
 	assignment_id: string;
 	label: string;
 	body: string;
-	answer: string | null;
 	points: number;
 	included: boolean;
 	sort_order: number;
@@ -114,3 +112,11 @@ export const CLASS_COLORS = [
 	'violet',
 	'brown'
 ] as const;
+
+/**
+ * Answers live apart from the rows students can read. See migration 004 — RLS is
+ * row-level, so an `answer` column on `problem` is readable by anyone who can
+ * read the problem.
+ */
+export type ProblemAnswer = { problem_id: string; org_id: string; answer: string | null };
+export type AssignmentKey = { assignment_id: string; org_id: string; answer_key: string | null };

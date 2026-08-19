@@ -18,23 +18,21 @@ const supabase: Handle = async ({ event, resolve }) => {
 	});
 
 	/**
-	 * getSession() alone trusts the cookie without verifying its signature, so the
-	 * session is only returned once getUser() has validated the JWT against the
-	 * auth server.
+	 * getUser() is the only source of identity here. getSession() reads the cookie
+	 * without verifying its signature, so it can be forged; getUser() sends the JWT
+	 * to the Auth server and gets back a user that is actually authentic.
+	 *
+	 * Note that auth-js wraps `session.user` in a Proxy that logs an insecurity
+	 * warning on *any* property access — so merely serializing a session object
+	 * toward the browser trips it. Nothing in this app needs the session, so we
+	 * never hold one.
 	 */
-	event.locals.safeGetSession = async () => {
-		const {
-			data: { session }
-		} = await event.locals.supabase.auth.getSession();
-		if (!session) return { session: null, user: null };
-
+	event.locals.getVerifiedUser = async () => {
 		const {
 			data: { user },
 			error
 		} = await event.locals.supabase.auth.getUser();
-		if (error) return { session: null, user: null };
-
-		return { session, user };
+		return error ? null : user;
 	};
 
 	return resolve(event, {
@@ -46,8 +44,7 @@ const supabase: Handle = async ({ event, resolve }) => {
 const PUBLIC_ROUTES = ['/login', '/auth', '/logout'];
 
 const guard: Handle = async ({ event, resolve }) => {
-	const { session, user } = await event.locals.safeGetSession();
-	event.locals.session = session;
+	const user = await event.locals.getVerifiedUser();
 	event.locals.user = user;
 	event.locals.profile = null;
 
@@ -75,7 +72,7 @@ const guard: Handle = async ({ event, resolve }) => {
 		}
 		redirect(
 			303,
-			session
+			user
 				? // Signed in but unprovisioned: an auth user nobody has added to an org.
 					'/login?error=no-profile'
 				: `/login?next=${encodeURIComponent(path)}`
