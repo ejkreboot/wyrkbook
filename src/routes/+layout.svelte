@@ -37,7 +37,6 @@
 
 <svelte:head>
 	<title>wyrkbook</title>
-	<meta name="theme-color" content="#faf7f2" />
 </svelte:head>
 
 <div class="app">
@@ -45,7 +44,9 @@
 		<header class="topbar">
 			<div class="wrap topbar-inner">
 				<a class="brand" href={homeFor(profile)}>
-					wyrkbook<span class="dot">.</span>
+					<!-- Decorative: the wordmark beside it already names the app. -->
+					<img class="brand-mark" src="/logo.png" alt="" width="400" height="311" />
+					<span>wyrkbook<span class="dot">.</span></span>
 				</a>
 				<div class="spacer"></div>
 				<div class="whoami">

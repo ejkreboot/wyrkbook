@@ -11,7 +11,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "seed:sysadmin": "tsx scripts/seed-sysadmin.ts",
-    "test:plan": "tsx scripts/test-plan-diff.ts"
+    "test:plan": "tsx scripts/test-plan-diff.ts",
+    "icons": "bash scripts/make-icons.sh"
   },
   "devDependencies": {
     "@sveltejs/adapter-vercel": "^6.3.4",

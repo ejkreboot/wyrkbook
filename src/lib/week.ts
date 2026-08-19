@@ -67,6 +67,12 @@ export function monthLabel(year: number, month0: number): string {
 	return `${MONTHS[month0]} ${year}`;
 }
 
+/** Whole weeks from one Monday to another; negative if `b` precedes `a`. */
+export function weeksBetween(a: string, b: string): number {
+	const ms = parseISODate(b).getTime() - parseISODate(a).getTime();
+	return Math.round(ms / (7 * 24 * 60 * 60 * 1000));
+}
+
 export function isCurrentWeek(isoMonday: string): boolean {
 	return isoMonday === weekStart();
 }

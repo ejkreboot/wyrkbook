@@ -122,8 +122,10 @@ main { flex: 1; padding: 1.25rem 0 5rem; }
 .brand {
 	font-family: var(--serif); font-size: 1.22rem; font-weight: 600;
 	color: var(--ink); text-decoration: none; letter-spacing: -.01em;
-	display: flex; align-items: baseline; gap: .35rem;
+	display: flex; align-items: center; gap: .45rem;
 }
+/* Intrinsic size is set on the element so the header does not reflow on load. */
+.brand-mark { height: 30px; width: auto; flex: none; }
 .brand:hover { text-decoration: none; }
 .brand .dot { color: var(--accent); }
 .brand-sub { font-family: var(--sans); font-size: .72rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: .09em; }
@@ -150,6 +152,8 @@ main { flex: 1; padding: 1.25rem 0 5rem; }
 }
 .nav a:hover { color: var(--ink); text-decoration: none; }
 .nav a[aria-current='page'] { color: var(--accent); border-bottom-color: var(--accent); }
+
+.login-mark { width: 96px; height: auto; margin: 0 auto .4rem; }
 
 /* ---------------------------------------------------------------- card */
 

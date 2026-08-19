@@ -23,8 +23,24 @@
 		return `?${p}`;
 	}
 
+	/*
+	 * Grouped by class before anything else. The server returns goals ordered by
+	 * sort_order, which is scoped to a single class-week — so across classes it
+	 * interleaves them and a mixed week reads as a jumble. Within a class the
+	 * teacher's own ordering is kept, with the title as a stable tiebreak.
+	 */
 	const goalsFor = $derived((week: string, classId?: string) =>
-		data.goals.filter((g) => g.week_start === week && (!classId || g.class_id === classId))
+		data.goals
+			.filter((g) => g.week_start === week && (!classId || g.class_id === classId))
+			.sort((a, b) => {
+				const an = classesById.get(a.class_id)?.name ?? '';
+				const bn = classesById.get(b.class_id)?.name ?? '';
+				return (
+					an.localeCompare(bn) ||
+					a.sort_order - b.sort_order ||
+					a.title.localeCompare(b.title)
+				);
+			})
 	);
 	const assignmentsFor = $derived((week: string) =>
 		data.assignments.filter((a) => a.week_start === week)

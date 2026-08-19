@@ -12,6 +12,7 @@
 
 <div class="wrap wrap-narrow" style="padding-top:3rem">
 	<div class="center" style="margin-bottom:1.5rem">
+		<img class="login-mark" src="/logo.png" alt="" width="400" height="311" />
 		<h1 style="font-size:2.2rem">wyrkbook<span style="color:var(--accent)">.</span></h1>
 		<p class="muted small">Homeschool, organized by the week.</p>
 	</div>

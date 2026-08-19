@@ -48,6 +48,12 @@
 	const startOptions = $derived(
 		Array.from({ length: 14 }, (_, i) => addWeeks(weekStart(), i - 4))
 	);
+
+	// The server widens the range to cover an existing plan, so the current count
+	// is often not one of the presets — fold it in rather than showing a blank.
+	const weekChoices = $derived(
+		[...new Set([6, 12, 18, 24, 36, 40, 52, data.count])].sort((a, b) => a - b)
+	);
 </script>
 
 <div class="wrap stack">
@@ -81,7 +87,7 @@
 		<div class="field" style="flex:0 1 120px;margin:0">
 			<label for="weeks">Weeks</label>
 			<select id="weeks" name="weeks" onchange={(e) => e.currentTarget.form?.requestSubmit()}>
-				{#each [6, 12, 18, 24, 36, 40, 52] as n}
+				{#each weekChoices as n (n)}
 					<option value={n} selected={n === data.count}>{n}</option>
 				{/each}
 			</select>
