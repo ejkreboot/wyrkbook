@@ -45,6 +45,20 @@
 	const assignmentsFor = $derived((week: string) =>
 		data.assignments.filter((a) => a.week_start === week)
 	);
+
+	/*
+	 * One column per class, in the same order in every week, so a class can be
+	 * followed straight down the month. Derived from the class list rather than
+	 * from the goals present: a week where a class has nothing still needs its
+	 * cell, or the columns stop lining up.
+	 *
+	 * `data.classes` excludes archived classes, so anything left over from one
+	 * drops out of the calendar — out of the columns and out of the week's count
+	 * alike. An archived class is done being taught; its goals are history.
+	 */
+	const visibleFor = $derived((week: string) =>
+		goalsFor(week).filter((g) => classesById.has(g.class_id))
+	);
 </script>
 
 <div class="wrap stack">
@@ -76,54 +90,72 @@
 		<div class="alert alert-ok">{form.message}</div>
 	{/if}
 
-	<div class="week-strip">
-		{#each data.weeks as week (week)}
-			{@const goals = goalsFor(week)}
-			{@const assignments = assignmentsFor(week)}
-			<div class="week-card {week === data.currentWeek ? 'is-current' : ''}">
-				<h4>
-					{weekLabel(week)}
-					<span class="count">{goals.filter((g) => g.done).length}/{goals.length}</span>
-				</h4>
+	<!-- One scroller around every week, not one per week: separate scrollers would
+	     drift out of step and the columns would stop being columns. -->
+	<div class="week-scroll">
+		<div class="week-rows">
+			{#each data.weeks as week (week)}
+				{@const goals = visibleFor(week)}
+				{@const assignments = assignmentsFor(week)}
+				<div class="week-card {week === data.currentWeek ? 'is-current' : ''}">
+					<h4>
+						<span class="stick-left">
+							{weekLabel(week)}
+							<span class="count">{goals.filter((g) => g.done).length}/{goals.length}</span>
+						</span>
+					</h4>
 
-				{#if data.classFilter}
-					<GoalList
-						{goals}
-						color={classesById.get(data.classFilter)?.color ?? 'slate'}
-						classId={data.classFilter}
-						{week}
-					/>
-				{:else}
-					<ul class="goal-list">
-						{#each goals as g (g.id)}
-							{@const k = classesById.get(g.class_id)}
-							<li class="goal {g.done ? 'is-done' : ''}" style="--tag: var(--c-{k?.color ?? 'slate'})">
-								<div style="flex:1;min-width:0">
-									<div class="goal-title">{g.title}</div>
-									<div class="goal-detail">{k?.name ?? 'Unknown class'}</div>
+					{#if data.classFilter}
+						<GoalList
+							{goals}
+							color={classesById.get(data.classFilter)?.color ?? 'slate'}
+							classId={data.classFilter}
+							{week}
+						/>
+					{:else if data.classes.length}
+						<div class="week-cols">
+							{#each data.classes as col (col.id)}
+								{@const cg = goalsFor(week, col.id)}
+								<div class="week-col">
+									<span class="chip" style="--tag: var(--c-{col.color})">
+										<span class="chip-dot"></span>{col.name}
+									</span>
+									{#if cg.length}
+										<ul class="goal-list">
+											{#each cg as g (g.id)}
+												<li class="goal {g.done ? 'is-done' : ''}" style="--tag: var(--c-{col.color})">
+													<div style="flex:1;min-width:0">
+														<div class="goal-title">{g.title}</div>
+														{#if g.detail}<div class="goal-detail">{g.detail}</div>{/if}
+													</div>
+												</li>
+											{/each}
+										</ul>
+									{:else}
+										<p class="week-col-empty">—</p>
+									{/if}
 								</div>
-							</li>
-						{/each}
-					</ul>
-					{#if !goals.length}
-						<p class="muted small" style="margin:.35rem 0 0">No goals set.</p>
+							{/each}
+						</div>
+					{:else}
+						<p class="muted small" style="margin:.35rem 0 0">No classes yet.</p>
 					{/if}
-				{/if}
 
-				{#if assignments.length}
-					<div style="margin-top:.6rem;border-top:1px solid var(--line);padding-top:.5rem">
-						{#each assignments as a (a.id)}
-							<div class="small">
-								<a href="/admin/assignments/{a.id}">{a.title}</a>
-							</div>
-						{/each}
+					{#if assignments.length}
+						<div class="stick-left" style="margin-top:.6rem;border-top:1px solid var(--line);padding-top:.5rem">
+							{#each assignments as a (a.id)}
+								<div class="small">
+									<a href="/admin/assignments/{a.id}">{a.title}</a>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					<div class="stick-left" style="margin-top:.5rem">
+						<a class="small muted" href="/admin?week={week}">Open week →</a>
 					</div>
-				{/if}
-
-				<div style="margin-top:.5rem">
-					<a class="small muted" href="/admin?week={week}">Open week →</a>
 				</div>
-			</div>
-		{/each}
+			{/each}
+		</div>
 	</div>
 </div>

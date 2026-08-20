@@ -130,8 +130,11 @@ main { flex: 1; padding: 1.25rem 0 5rem; }
 .brand .dot { color: var(--accent); }
 .brand-sub { font-family: var(--sans); font-size: .72rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: .09em; }
 
+/* Name and role read as one line — `Ada Lovelace · admin` — so the header stays
+   56px tall whatever is in it. Allowed to wrap only if the name is very long. */
 .whoami { font-size: .82rem; color: var(--ink-3); text-align: right; line-height: 1.25; }
-.whoami strong { display: block; color: var(--ink-2); font-weight: 600; }
+.whoami strong { color: var(--ink-2); font-weight: 600; }
+.whoami-sep { margin: 0 .3rem; color: var(--line-strong); }
 
 /* Nav scrolls horizontally on a phone rather than wrapping into a tall block. */
 .nav {
@@ -346,13 +349,56 @@ tbody tr:hover { background: var(--paper-2); }
 .week-nav h2 { font-size: 1.15rem; }
 .week-nav .today-tag { font-size: .74rem; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
 
-.week-strip { display: grid; gap: .75rem; grid-template-columns: 1fr; }
-@media (min-width: 720px)  { .week-strip { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1040px) { .week-strip { grid-template-columns: repeat(4, 1fr); } }
+/*
+ * A week per row, always — a month of weeks reads down, not in a 4-up grid.
+ * Within a row each class gets a column, and the scroller wraps the whole run of
+ * rows rather than each row, so every week scrolls together and a class can be
+ * followed straight down the page. The padding/margin pair keeps the current
+ * week's 2px ring from being clipped by the scroll container.
+ */
+.week-scroll {
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	padding: 3px;
+	margin: -3px;
+}
+.week-rows {
+	display: flex; flex-direction: column; gap: .75rem;
+	min-width: min-content;
+}
+
+/* Narrow: one class under the last, wrapping. Wide: side-by-side columns that
+   stop shrinking at 210px and push the scroller instead. */
+.week-cols { display: flex; flex-wrap: wrap; gap: .6rem; }
+.week-col { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.week-col-empty { margin: 0; font-size: .84rem; color: var(--ink-3); }
+
+@media (min-width: 720px) {
+	.week-cols {
+		display: grid;
+		grid-auto-flow: column;
+		grid-auto-columns: minmax(210px, 1fr);
+		align-items: start;
+	}
+}
 
 .week-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem; }
 .week-card.is-current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.week-card h4 { margin-bottom: .5rem; display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.week-card h4 { margin-bottom: .5rem; }
+
+/*
+ * Everything in a week row that is not a class column pins to the left edge of
+ * the scroller. Without this, scrolling out to the sixth class leaves four
+ * anonymous rows on screen with no dates on them. Sticky needs an element
+ * narrower than its container, hence max-content.
+ */
+.week-card .stick-left {
+	/* .8rem matches the card's own padding, so pinning does not shunt the label
+	   flush against the border once the row starts scrolling. */
+	position: sticky; left: .8rem;
+	width: max-content; max-width: 100%;
+}
+.week-card h4 .stick-left { display: inline-flex; align-items: baseline; gap: .5rem; }
 .week-card .count { font-family: var(--sans); font-size: .74rem; color: var(--ink-3); font-weight: 500; }
 
 .goal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }

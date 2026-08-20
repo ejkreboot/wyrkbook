@@ -56,25 +56,36 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 	}
 
 	/*
-	 * A file read outlives the page that started it, so the planner picks up
-	 * whatever is in flight or waiting for this class rather than assuming the
-	 * teacher is still sitting on the tab that kicked it off.
+	 * A file read outlives the page that started it, so the planner picks up the
+	 * class's most recent one rather than assuming the teacher is still sitting
+	 * on the tab that kicked it off.
+	 *
+	 * Deliberately not filtered by status. An `applied` row is finished business
+	 * as far as the plan goes, but it still carries the guidance that produced
+	 * it — which is the thing worth having back when the pacing came out wrong
+	 * and the teacher wants to say it differently and read the file again.
 	 */
 	let pending: PlanImport | null = null;
 	if (classId) {
-		const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+		const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 		const { data } = await locals.supabase
 			.from('plan_import')
 			.select('*')
 			.eq('class_id', classId)
-			.in('status', ['running', 'ready'])
-			.gte('created_at', dayAgo)
+			.gte('created_at', monthAgo)
 			.order('created_at', { ascending: false })
 			.limit(1)
 			.maybeSingle();
 
 		if (data) pending = await settleIfExpired(data as PlanImport, locals.supabase);
 	}
+
+	// A stale red box helps nobody: an old failure supplies its guidance but not
+	// its error. A `running` row needs no age check — its own `expires_at` has
+	// already settled it above if the function that owned it is gone.
+	const staleFailure =
+		pending?.status === 'failed' &&
+		Date.now() - new Date(pending.created_at).getTime() > 24 * 60 * 60 * 1000;
 
 	return {
 		classId,
@@ -87,9 +98,10 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 			id: pending.id,
 			status: pending.status,
 			file_name: pending.file_name,
+			guidance: pending.guidance ?? '',
 			notes: pending.notes ?? '',
 			weeks: pending.plan ?? [],
-			error: pending.error ?? ''
+			error: staleFailure ? '' : (pending.error ?? '')
 		}
 	};
 };

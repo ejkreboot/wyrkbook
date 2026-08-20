@@ -78,6 +78,11 @@
 	let importError = $state('');
 	let importNotes = $state('');
 
+	// What the server last handed us, so a guidance box the teacher has since
+	// edited is never clobbered by a reload — see adoptServerJob().
+	let guidanceSeed = $state('');
+	let lastFile = $state('');
+
 	// Two-way bound rather than derived from state: an `open={...}` attribute
 	// would slam the panel shut on the teacher whenever anything else re-rendered.
 	let panelOpen = $state(false);
@@ -98,7 +103,11 @@
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	$effect(() => () => clearTimeout(timer));
 
-	/** Picks up whatever the server says is in flight or waiting for this class. */
+	/**
+	 * Picks up whatever the server says is in flight, waiting, or last read for
+	 * this class — including the guidance that produced it, so a plan that came
+	 * out paced wrong can be argued with rather than retyped from scratch.
+	 */
 	function adoptServerJob() {
 		clearTimeout(timer);
 		importError = '';
@@ -108,6 +117,17 @@
 		jobStatus = 'idle';
 
 		const p = data.pendingImport;
+
+		/*
+		 * Follow the server only while the box is untouched. A save reloads the
+		 * page, and typed-but-not-yet-run guidance surviving that reload is the
+		 * whole point of editing it.
+		 */
+		const stored = p?.guidance ?? '';
+		if (guidance === guidanceSeed) guidance = stored;
+		guidanceSeed = stored;
+		lastFile = p?.file_name ?? '';
+
 		if (!p) return;
 
 		jobFile = p.file_name;
@@ -192,6 +212,7 @@
 			// The teacher started this one and is still here, so apply it rather
 			// than making them click a second time.
 			jobStatus = 'ready';
+			lastFile = job.file_name || lastFile;
 			applyPlan(job.weeks, job.notes);
 			markApplied(job.id);
 		} catch {
@@ -331,7 +352,11 @@
 		<details class="card import-panel" bind:open={panelOpen}>
 			<summary>
 				<span class="card-title">Start from a file</span>
-				<span class="card-note">Lesson list, syllabus or schedule — PDF, text or a photo.</span>
+				{#if lastFile}
+					<span class="card-note">Last read from <strong>{lastFile}</strong> — guidance kept.</span>
+				{:else}
+					<span class="card-note">Lesson list, syllabus or schedule — PDF, text or a photo.</span>
+				{/if}
 			</summary>
 
 			<div class="stack-s" style="margin-top:.9rem">
@@ -347,6 +372,13 @@
 					accept="application/pdf,text/plain,text/csv,text/markdown,image/jpeg,image/png,image/webp,.pdf,.txt,.csv,.tsv,.md"
 					onchange={onPick}
 				/>
+
+				{#if lastFile && !file}
+					<p class="muted small" style="margin:0">
+						The last read used <strong>{lastFile}</strong>. Pick it again to re-run with the
+						guidance below — the document itself is not kept.
+					</p>
+				{/if}
 
 				<div class="field">
 					<label for="guidance">Guidance</label>
@@ -374,6 +406,8 @@
 				>
 					{#if busy}
 						<span class="spinner"></span> Reading…
+					{:else if lastFile}
+						Read it again
 					{:else}
 						Read the file
 					{/if}
@@ -389,7 +423,10 @@
 		{#if importNotes}
 			<div class="hint-card">
 				<h4>How it read the file</h4>
-				{importNotes}
+				<p style="margin:0 0 .5rem">{importNotes}</p>
+				<button class="btn btn-sm" type="button" onclick={() => (panelOpen = true)}>
+					Not quite — edit the guidance and read it again
+				</button>
 			</div>
 		{/if}
 

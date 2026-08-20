@@ -168,6 +168,15 @@ flight lives in the row rather than in the page. A read that finishes while they
 are elsewhere is *offered* rather than applied, since the boxes may hold edits
 they have not saved.
 
+The planner reads back the class's most recent import whatever its status, not
+just an unfinished one, because a finished row still carries the guidance that
+produced it. Getting the pacing right is a conversation — "actually make it 36
+weeks", "move the break a week later" — and the second turn should start from
+the sentence that was wrong, not from an empty box. The box follows the stored
+guidance only while it is untouched; once edited it survives reloads, including
+the one that follows a save. The document itself is not kept, so re-running
+means picking the file again — its name is shown to say which.
+
 Two failure modes are handled without a queue or a cron:
 
 - **The function is killed.** `waitUntil` promises die with their invocation, so

@@ -50,8 +50,7 @@
 				</a>
 				<div class="spacer"></div>
 				<div class="whoami">
-					<strong>{profile?.display_name}</strong>
-					{profile?.role}
+					<strong>{profile?.display_name}</strong><span class="whoami-sep">·</span>{profile?.role}
 				</div>
 				<a class="btn btn-ghost btn-sm" href="/logout" data-sveltekit-preload-data="off">Sign out</a>
 			</div>

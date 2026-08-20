@@ -27,6 +27,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		id: row.id,
 		status: row.status,
 		file_name: row.file_name,
+		guidance: row.guidance ?? '',
 		notes: row.notes,
 		weeks: row.plan ?? [],
 		error: row.error
