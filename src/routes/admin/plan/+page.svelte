@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { weekLabel, addWeeks, weekStart } from '$lib/week';
+	import { planFingerprint } from '$lib/planFingerprint';
 
 	let { data, form } = $props();
 
@@ -15,6 +16,14 @@
 	// silently truncated to the 18 the page happened to open with.
 	let weeks = $state<string[]>([]);
 
+	/*
+	 * What the boxes looked like when the server last spoke. Compared against the
+	 * live boxes to decide whether there is anything to save — normalized the
+	 * same way planDiff normalizes, so trailing blank lines and stray spaces are
+	 * not mistaken for edits, and an empty week is the same as no week at all.
+	 */
+	let baseline = $state('');
+
 	$effect(() => {
 		const stamp = `${data.classId}:${data.start}:${data.count}:${data.goals.length}`;
 		if (stamp === seeded) return;
@@ -27,8 +36,13 @@
 		}
 		boxes = next;
 		weeks = [...data.weeks];
+		baseline = planFingerprint(data.weeks, next);
 		adoptServerJob();
 	});
+
+	// `seeded` guards the first frame: before the effect above runs there are no
+	// boxes to compare, and an empty plan must not look like an edited one.
+	const dirty = $derived(seeded !== '' && planFingerprint(weeks, boxes) !== baseline);
 
 	const klass = $derived(data.classes.find((c) => c.id === data.classId));
 
@@ -50,6 +64,8 @@
 	/** Enter inside a box should make another goal, not submit the form. */
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+			// requestSubmit() ignores a disabled button, so the guard belongs here too.
+			if (!dirty) return;
 			(e.currentTarget as HTMLElement).closest('form')?.requestSubmit();
 		}
 	}
@@ -449,7 +465,10 @@
 				</span>
 				<span class="muted small">{totalGoals} goals across {weeks.length} weeks</span>
 				<div class="spacer"></div>
-				<button class="btn btn-primary btn-sm" type="submit">Save plan</button>
+				{#if dirty}
+					<span class="unsaved" role="status"><span class="unsaved-dot"></span>Unsaved changes</span>
+				{/if}
+				<button class="btn btn-primary btn-sm" type="submit" disabled={!dirty}>Save plan</button>
 			</div>
 
 			<ul class="plan-list">
@@ -474,7 +493,10 @@
 			<div class="plan-foot">
 				<span class="muted small">⌘/Ctrl + Enter saves from any box.</span>
 				<div class="spacer"></div>
-				<button class="btn btn-primary" type="submit">Save plan</button>
+				{#if dirty}
+					<span class="unsaved"><span class="unsaved-dot"></span>Unsaved changes</span>
+				{/if}
+				<button class="btn btn-primary" type="submit" disabled={!dirty}>Save plan</button>
 			</div>
 		</form>
 	{/if}

@@ -5,6 +5,7 @@
  * other goals in it, because a disturbed goal loses its `done` tick.
  */
 import { planDiff, type PlanWeek } from '../src/lib/server/planDiff.ts';
+import { planFingerprint } from '../src/lib/planFingerprint.ts';
 import type { WeeklyGoal } from '../src/lib/types.ts';
 
 const CTX = { orgId: 'org-1', classId: 'class-1' };
@@ -141,6 +142,59 @@ function weeks(...w: PlanWeek[]) {
 	check('lands in the right week', d.toInsert[0].week_start === W2);
 	console.log('        (note: a goal moved between weeks is re-created, so its');
 	console.log('         done tick does not follow it — see README)');
+}
+
+// -------------------------------------------- 9. the Save button agrees with the diff
+/*
+ * The planner greys out Save until `planFingerprint` says the boxes differ from
+ * what the server sent. That judgement has to match what planDiff would actually
+ * do, in both directions: a false "unchanged" loses an edit behind a dead
+ * button, and a false "changed" nags about whitespace nobody typed.
+ */
+{
+	const stored = [goal('g1', W1, 'Ch. 1', 0, true), goal('g2', W1, 'Ch. 2', 1)];
+	const asBoxes = { [W1]: 'Ch. 1\nCh. 2' };
+	const base = planFingerprint([W1], asBoxes);
+
+	/** Does planDiff want to write anything for these boxes? */
+	const diffIsEmpty = (boxes: Record<string, string>, weekList = [W1]) => {
+		const d = planDiff(
+			weekList.map((w) => ({ week_start: w, lines: (boxes[w] ?? '').split('\n') })),
+			stored,
+			CTX
+		);
+		return !d.toInsert.length && !d.toDelete.length && !d.toUpsert.length;
+	};
+
+	const agree = (name: string, boxes: Record<string, string>, weekList = [W1]) => {
+		const clean = planFingerprint(weekList, boxes) === base;
+		check(name, clean === diffIsEmpty(boxes, weekList),
+			clean ? 'called it unchanged, but planDiff would write' : 'called it changed, but planDiff would not');
+	};
+
+	console.log('\nSave stays greyed out exactly when planDiff would do nothing:');
+	agree('untouched boxes', { [W1]: 'Ch. 1\nCh. 2' });
+	agree('a trailing newline', { [W1]: 'Ch. 1\nCh. 2\n' });
+	agree('blank lines between goals', { [W1]: 'Ch. 1\n\n\nCh. 2\n\n' });
+	agree('spaces around a title', { [W1]: '  Ch. 1  \n\tCh. 2 ' });
+	agree('an edited title', { [W1]: 'Ch. 1 revised\nCh. 2' });
+	agree('a new goal', { [W1]: 'Ch. 1\nCh. 2\nCh. 3' });
+	agree('a deleted goal', { [W1]: 'Ch. 1' });
+	agree('everything cleared', { [W1]: '' });
+	agree('reordered goals', { [W1]: 'Ch. 2\nCh. 1' });
+
+	// An imported plan can push the box list past the week range that was
+	// loaded; empty new weeks are not an edit, a filled one is.
+	const wideBase = planFingerprint([W1, W2], asBoxes);
+	check(
+		'an empty week appended by an import is not a change',
+		wideBase === base,
+		'an empty week counted as an edit'
+	);
+	check(
+		'a filled week appended by an import is a change',
+		planFingerprint([W1, W2], { ...asBoxes, [W2]: 'Ch. 3' }) !== base
+	);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

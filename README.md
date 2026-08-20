@@ -115,9 +115,17 @@ lines to existing goals by title within the week, so an untouched line keeps its
 row — and therefore its completion state, its detail, and any linked assignment.
 Only genuinely new lines are inserted and genuinely deleted lines removed.
 
+Save plan is greyed out until the boxes differ from what the server sent, with
+an "Unsaved changes" mark beside it once they do. The comparison
+(`src/lib/planFingerprint.ts`) normalizes the boxes exactly the way `planDiff`
+does — trim, drop blank lines, ignore an empty week — because the two have to
+agree in both directions: a false "unchanged" hides an edit behind a dead
+button, and a false "changed" nags about whitespace nobody typed.
+
 Run `npm run test:plan` for the reconciliation tests, including the case that
-motivates the whole design: editing one line in a week where another goal is
-already ticked off.
+motivates the whole design (editing one line in a week where another goal is
+already ticked off) and the property that keeps the button honest: the
+fingerprint calls a plan clean exactly when planDiff would write nothing.
 
 Known limit: moving a goal from one week to another is a delete plus an insert,
 so a completed goal that moves weeks comes back unticked.

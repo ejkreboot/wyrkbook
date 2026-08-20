@@ -516,6 +516,16 @@ tbody tr:hover { background: var(--paper-2); }
 	box-shadow: var(--shadow);
 }
 .plan-head { position: sticky; top: 56px; z-index: 20; margin-bottom: .75rem; }
+
+/* Paired with a disabled Save button, so the dot is a reason rather than an
+   alarm — a steady mark in the accent colour, not a blinking one. */
+.unsaved {
+	display: inline-flex; align-items: center; gap: .4rem;
+	font-size: .78rem; font-weight: 600; letter-spacing: .01em;
+	color: var(--accent);
+	white-space: nowrap;
+}
+.unsaved-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
 .plan-foot { margin-top: .75rem; }
 
 .plan-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
