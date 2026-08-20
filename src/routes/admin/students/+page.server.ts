@@ -1,14 +1,22 @@
 import { fail } from '@sveltejs/kit';
 import { createUserWithProfile, deleteUserCompletely } from '$lib/server/users';
+import { enrollmentActions } from '$lib/server/enrollment';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const { data } = await locals.supabase
-		.from('profile')
-		.select('*')
-		.order('role')
-		.order('display_name');
-	return { people: data ?? [] };
+	const [{ data: people }, { data: classes }, { data: enrollments }] = await Promise.all([
+		locals.supabase.from('profile').select('*').order('role').order('display_name'),
+		// Archived classes are not offered, but an existing enrollment in one is
+		// still shown — otherwise it would silently disappear from the roster.
+		locals.supabase.from('class').select('id, name, color, archived').order('name'),
+		locals.supabase.from('enrollment').select('class_id, student_id')
+	]);
+
+	return {
+		people: people ?? [],
+		classes: classes ?? [],
+		enrollments: enrollments ?? []
+	};
 };
 
 export const actions: Actions = {
@@ -29,7 +37,7 @@ export const actions: Actions = {
 			orgId: locals.profile!.org_id
 		});
 		if (error) return fail(400, { message: error });
-		return { message: `${displayName.trim()} can now sign in with their email.` };
+		return { ok: true, message: `${displayName.trim()} can now sign in with their email.` };
 	},
 
 	remove: async ({ request, locals }) => {
@@ -49,6 +57,8 @@ export const actions: Actions = {
 		if (!target) return fail(403, { message: 'That person is not in your organization.' });
 
 		await deleteUserCompletely(id);
-		return { message: 'Removed.' };
-	}
+		return { ok: true, message: 'Removed.' };
+	},
+
+	...enrollmentActions
 };

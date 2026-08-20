@@ -1,14 +1,25 @@
 import { fail } from '@sveltejs/kit';
 import { CLASS_COLORS } from '$lib/types';
+import { enrollmentActions } from '$lib/server/enrollment';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const { data } = await locals.supabase
-		.from('class')
-		.select('*')
-		.order('archived')
-		.order('name');
-	return { allClasses: data ?? [], colors: CLASS_COLORS };
+	const [{ data: classes }, { data: students }, { data: enrollments }] = await Promise.all([
+		locals.supabase.from('class').select('*').order('archived').order('name'),
+		locals.supabase
+			.from('profile')
+			.select('id, display_name, email')
+			.eq('role', 'student')
+			.order('display_name'),
+		locals.supabase.from('enrollment').select('class_id, student_id')
+	]);
+
+	return {
+		allClasses: classes ?? [],
+		students: students ?? [],
+		enrollments: enrollments ?? [],
+		colors: CLASS_COLORS
+	};
 };
 
 export const actions: Actions = {
@@ -27,7 +38,7 @@ export const actions: Actions = {
 			color
 		});
 		if (error) return fail(400, { message: error.message });
-		return { message: `Added ${name}.` };
+		return { ok: true, message: `Added ${name}.` };
 	},
 
 	update: async ({ request, locals }) => {
@@ -42,7 +53,7 @@ export const actions: Actions = {
 
 		const { error } = await locals.supabase.from('class').update(patch).eq('id', id);
 		if (error) return fail(400, { message: error.message });
-		return { message: 'Saved.' };
+		return { ok: true, message: 'Saved.' };
 	},
 
 	setArchived: async ({ request, locals }) => {
@@ -51,6 +62,8 @@ export const actions: Actions = {
 		const archived = String(form.get('archived') ?? '') === 'true';
 		const { error } = await locals.supabase.from('class').update({ archived }).eq('id', id);
 		if (error) return fail(400, { message: error.message });
-		return { message: archived ? 'Archived.' : 'Restored.' };
-	}
+		return { ok: true, message: archived ? 'Archived.' : 'Restored.' };
+	},
+
+	...enrollmentActions
 };

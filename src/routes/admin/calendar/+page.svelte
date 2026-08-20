@@ -4,7 +4,16 @@
 
 	let { data, form } = $props();
 
-	const classesById = $derived(new Map(data.classes.map((c) => [c.id, c])));
+	/*
+	 * `data.classIds` is the roster of the student being filtered by, or null for
+	 * no filter. Everything downstream — the columns, the per-week counts, the
+	 * lookup map — works off the visible set, so filtering by a student shows the
+	 * month exactly as that student's week is shaped.
+	 */
+	const visibleClasses = $derived(
+		data.classIds ? data.classes.filter((c) => data.classIds!.includes(c.id)) : data.classes
+	);
+	const classesById = $derived(new Map(visibleClasses.map((c) => [c.id, c])));
 
 	const prev = $derived(
 		data.month0 === 0
@@ -20,6 +29,7 @@
 	function qs(y: number, m: number) {
 		const p = new URLSearchParams({ y: String(y), m: String(m) });
 		if (data.classFilter) p.set('class', data.classFilter);
+		if (data.studentFilter) p.set('student', data.studentFilter);
 		return `?${p}`;
 	}
 
@@ -103,6 +113,18 @@
 				<option value={c.id} selected={c.id === data.classFilter}>{c.name}</option>
 			{/each}
 		</select>
+		<label class="label" for="stu">Student</label>
+		<select
+			id="stu"
+			name="student"
+			style="max-width:220px"
+			onchange={(e) => e.currentTarget.form?.requestSubmit()}
+		>
+			<option value="">All students</option>
+			{#each data.students as s (s.id)}
+				<option value={s.id} selected={s.id === data.studentFilter}>{s.display_name}</option>
+			{/each}
+		</select>
 		<noscript><button class="btn btn-sm" type="submit">Filter</button></noscript>
 	</form>
 
@@ -135,9 +157,9 @@
 							classId={data.classFilter}
 							{week}
 						/>
-					{:else if data.classes.length}
+					{:else if visibleClasses.length}
 						<div class="week-cols">
-							{#each data.classes as col (col.id)}
+							{#each visibleClasses as col (col.id)}
 								{@const cg = goalsFor(week, col.id)}
 								<div class="week-col">
 									<span class="chip" style="--tag: var(--c-{col.color})">
@@ -161,7 +183,9 @@
 							{/each}
 						</div>
 					{:else}
-						<p class="muted small" style="margin:.35rem 0 0">No classes yet.</p>
+						<p class="muted small" style="margin:.35rem 0 0">
+							{data.studentFilter ? 'Not enrolled in any class.' : 'No classes yet.'}
+						</p>
 					{/if}
 
 					{#if assignments.length}

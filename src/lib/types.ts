@@ -21,6 +21,19 @@ export type Klass = {
 	created_at: string;
 };
 
+/**
+ * A student's place on a class roster. The unique (class_id, student_id) pair is
+ * the whole row's meaning; `org_id` is denormalized so RLS can scope it without
+ * a join, the same way every other table here does.
+ */
+export type Enrollment = {
+	id: string;
+	org_id: string;
+	class_id: string;
+	student_id: string;
+	created_at: string;
+};
+
 export type AssignmentStatus = 'draft' | 'published' | 'archived';
 
 export type Assignment = {

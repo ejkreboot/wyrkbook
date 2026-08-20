@@ -54,10 +54,26 @@ Enforced by Postgres RLS, not by the UI.
 | --- | --- |
 | `sysadmin` | Create organizations and admins. No org of their own. |
 | `admin` | Everything inside their organization: classes, goals, assignments, students, grades. |
-| `student` | Work any *published* assignment in their org, ask for hints, turn in work, read their own results. |
+| `student` | Work *published* assignments in the classes they are enrolled in, see those classes' weekly goals, ask for hints, turn in work, read their own results. |
 
-There is deliberately no roster: students are not assigned to classes, and any
-student can pick up any published assignment.
+### Rosters
+
+A class has a roster, and it is what a student's whole view is cut from: the
+weekly goals they see and the assignments they can pick up are the ones
+belonging to a class they are on. A student on no roster sees nothing.
+
+Enrollment is edited from both ends and the two are the same rows — one class
+and its students on `/admin/classes`, one student and their classes on
+`/admin/students`.
+
+The roster governs what a student can *start*, not what they can finish.
+`wb_can_work()` also passes an assignment the student already has a submission
+against, so unenrolling somebody mid-assignment does not make the sheet in their
+hands, its problems and their own in-progress work vanish from under them.
+
+Teachers get the roster back as a filter: pick a student on **This week** or the
+calendar and the board narrows to their classes, showing the week as that one
+student sees it.
 
 Two things are written with the service role rather than the user's own client,
 because RLS gives students no way to do them: minting auth users, and writing
@@ -82,6 +98,7 @@ src/
       supabaseAdmin.ts        service-role client
       users.ts                auth user + profile provisioning
       goals.ts                weekly-goal actions, shared by two routes
+      enrollment.ts           roster actions, shared by two routes
   routes/
     login/                    two-step email OTP
     sysadmin/                 organizations and admins

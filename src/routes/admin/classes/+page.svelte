@@ -1,13 +1,32 @@
 <script lang="ts">
+	import Roster from '$lib/components/Roster.svelte';
+
 	let { data, form } = $props();
 	let editing = $state<string | null>(null);
+
+	const nameById = $derived(new Map(data.students.map((s) => [s.id, s.display_name])));
+
+	/** class id -> the students on its roster, in the load's display-name order. */
+	const rosterByClass = $derived.by(() => {
+		const m = new Map<string, { id: string; label: string }[]>();
+		for (const k of data.allClasses) m.set(k.id, []);
+		for (const e of data.enrollments) {
+			const label = nameById.get(e.student_id);
+			if (label) m.get(e.class_id)?.push({ id: e.student_id, label });
+		}
+		return m;
+	});
+
+	const studentOptions = $derived(
+		data.students.map((s) => ({ id: s.id, label: s.display_name }))
+	);
 </script>
 
 <div class="wrap stack">
 	<h1>Classes</h1>
 
 	{#if form?.message}
-		<div class="alert alert-ok">{form.message}</div>
+		<div class="alert {form.ok ? 'alert-ok' : 'alert-bad'}">{form.message}</div>
 	{/if}
 
 	<div class="card">
@@ -79,6 +98,24 @@
 								</form>
 							</div>
 						</div>
+
+						<div style="margin-top:.85rem">
+							<div class="label" style="margin-bottom:.35rem">Students</div>
+							{#if data.students.length}
+								<Roster
+									entries={rosterByClass.get(k.id) ?? []}
+									options={studentOptions}
+									fixed={{ name: 'class_id', value: k.id }}
+									pick="student_id"
+									addLabel="Add student"
+									emptyLabel="Nobody enrolled — this class shows up for no student."
+								/>
+							{:else}
+								<div class="card-note">
+									No students yet. <a href="/admin/students">Add one</a> to build a roster.
+								</div>
+							{/if}
+						</div>
 					{/if}
 				</div>
 			{/each}
@@ -86,7 +123,10 @@
 	{:else}
 		<div class="empty">
 			<h3>No classes yet</h3>
-			<p>Add the subjects you teach. Assignments and weekly goals both hang off a class.</p>
+			<p>
+				Add the subjects you teach. Assignments and weekly goals both hang off a class,
+				and a student sees them only once they are on its roster.
+			</p>
 		</div>
 	{/if}
 </div>

@@ -282,6 +282,19 @@ input[disabled], textarea[disabled], select[disabled] { background: var(--paper-
 }
 .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tag, var(--ink-3)); flex: none; }
 
+/* ---------------------------------------------------------------- roster */
+
+.roster { display: flex; flex-direction: column; gap: .5rem; }
+.roster-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.roster-add { display: flex; gap: .4rem; align-items: center; }
+.roster-add select { flex: 0 1 220px; }
+
+.chip-x {
+	border: 0; background: none; cursor: pointer; padding: 0 0 0 .1rem;
+	font-size: 1rem; line-height: 1; color: inherit; opacity: .55;
+}
+.chip-x:hover { opacity: 1; }
+
 /* ---------------------------------------------------------------- alerts */
 
 .alert {
