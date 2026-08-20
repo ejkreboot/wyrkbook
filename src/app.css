@@ -383,7 +383,16 @@ tbody tr:hover { background: var(--paper-2); }
 }
 
 .week-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem; }
-.week-card.is-current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.week-card.is-current {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px var(--accent-soft);
+	/*
+	 * The calendar opens scrolled to this week. Measured chrome is 104px — a
+	 * 57px topbar over a 47px nav, both sticky — so clear that plus a little
+	 * air, or the week lands underneath the thing that is covering it.
+	 */
+	scroll-margin-top: 112px;
+}
 .week-card h4 { margin-bottom: .5rem; }
 
 /*

@@ -59,6 +59,26 @@
 	const visibleFor = $derived((week: string) =>
 		goalsFor(week).filter((g) => classesById.has(g.class_id))
 	);
+
+	/*
+	 * A month opens on the current week rather than at the top of it — by the end
+	 * of May, January's weeks are not what anyone came to look at. Once per month
+	 * shown, so toggling a goal does not yank the page back.
+	 *
+	 * The scrollY test stands aside for the browser's own scroll restoration: on
+	 * a back-navigation the reader was already somewhere, and moving them is
+	 * worse than not helping.
+	 */
+	let focused = $state('');
+
+	$effect(() => {
+		const key = `${data.year}-${data.month0}`;
+		if (focused === key) return;
+		focused = key;
+
+		if (!data.weeks.includes(data.currentWeek) || window.scrollY > 4) return;
+		document.getElementById('this-week')?.scrollIntoView({ block: 'start', behavior: 'instant' });
+	});
 </script>
 
 <div class="wrap stack">
@@ -97,7 +117,10 @@
 			{#each data.weeks as week (week)}
 				{@const goals = visibleFor(week)}
 				{@const assignments = assignmentsFor(week)}
-				<div class="week-card {week === data.currentWeek ? 'is-current' : ''}">
+				<div
+					class="week-card {week === data.currentWeek ? 'is-current' : ''}"
+					id={week === data.currentWeek ? 'this-week' : undefined}
+				>
 					<h4>
 						<span class="stick-left">
 							{weekLabel(week)}
