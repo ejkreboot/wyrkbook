@@ -230,6 +230,12 @@ main { flex: 1; padding: 1.25rem 0 5rem; }
 }
 .hint { font-size: .78rem; color: var(--ink-3); }
 
+/* `input:not([type])` is in the list because a bare <input> defaults to text and
+   should look like one. Without it a forgotten type= attribute drops the control
+   back to the browser's own square-cornered styling, which reads as a bug rather
+   than a choice. Checkboxes, radios and file inputs all carry an explicit type,
+   so :not([type]) never catches them. */
+input:not([type]),
 input[type='text'], input[type='email'], input[type='number'],
 input[type='date'], input[type='search'], input[type='password'],
 select, textarea {
@@ -449,7 +455,10 @@ tbody tr:hover { background: var(--paper-2); }
 	border-radius: var(--radius-sm);
 }
 .problem.is-excluded { opacity: .45; background: var(--paper-2); }
-.problem-label {
+/* Used on a <div> when the label is read-only and an <input> when it is editable.
+   The input arm is spelled out so it out-specifies the base control styling above,
+   which would otherwise pull the number back to sans at 1rem. */
+.problem-label, input.problem-label {
 	flex: none; min-width: 2.4rem;
 	font-family: var(--mono); font-size: .85rem; font-weight: 700;
 	color: var(--accent);
