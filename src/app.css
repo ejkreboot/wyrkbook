@@ -528,8 +528,11 @@ tbody tr:hover { background: var(--paper-2); }
 
 /* ---------------------------------------------------------------- term planner */
 
-/* Sticky so the class chip and Save stay reachable during a 36-week scroll. */
-.plan-head, .plan-foot {
+/* Sticky so the class chip and Save stay reachable during a 36-week scroll.
+   The gradebook wants the same bar, so the rule is shared under a neutral name
+   rather than copied — `.save-bar.is-sticky` is `.plan-head` without the
+   planner in the name. */
+.save-bar, .plan-head, .plan-foot {
 	display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
 	padding: .7rem .85rem;
 	background: var(--card);
@@ -537,7 +540,7 @@ tbody tr:hover { background: var(--paper-2); }
 	border-radius: var(--radius);
 	box-shadow: var(--shadow);
 }
-.plan-head { position: sticky; top: 56px; z-index: 20; margin-bottom: .75rem; }
+.plan-head, .save-bar.is-sticky { position: sticky; top: 56px; z-index: 20; margin-bottom: .75rem; }
 
 /* Paired with a disabled Save button, so the dot is a reason rather than an
    alarm — a steady mark in the accent colour, not a blinking one. */
@@ -600,6 +603,95 @@ tbody tr:hover { background: var(--paper-2); }
 }
 .import-panel[open] > summary::before { transform: rotate(90deg); }
 .import-panel > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+/* ---------------------------------------------------------------- gradebook */
+
+/*
+ * A term's worth of columns will not fit a phone, and stacking them the way
+ * table.responsive does would destroy the one thing a gradebook is for —
+ * reading across a student and down a column. So it scrolls sideways, the way
+ * the calendar's week rows do, and the student's name and running total stay
+ * pinned to the left edge while the marks slide past. The padding/margin pair
+ * is the same trick .week-scroll uses to keep focus rings from being clipped.
+ */
+.gb-scroll {
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	padding: 3px;
+	margin: -3px;
+}
+
+/*
+ * Overrides two things the base table rules do. `collapse` drops the borders on
+ * sticky cells in WebKit, and `width: 100%` would stop the grid ever growing
+ * past the viewport, which is exactly what it has to do.
+ */
+.gb {
+	border-collapse: separate;
+	border-spacing: 0;
+	width: auto;
+	min-width: 100%;
+}
+.gb th, .gb td {
+	border: 0;
+	border-bottom: 1px solid var(--line);
+	border-right: 1px solid var(--line);
+	padding: .35rem .5rem;
+	height: var(--tap);
+}
+.gb thead th {
+	position: sticky; top: 0; z-index: 2;
+	background: var(--paper-2);
+	min-width: 7rem;
+	vertical-align: bottom;
+	text-transform: none; letter-spacing: 0; font-size: .8rem; color: var(--ink-2);
+}
+.gb-points { display: block; font-weight: 500; color: var(--ink-3); font-size: .74rem; }
+
+/* The opaque background is not decoration: without it the marks scroll through
+   the pinned column. */
+.gb-name {
+	position: sticky; left: 0; z-index: 3;
+	background: var(--card);
+	min-width: 9.5rem; max-width: 13rem;
+	text-align: left; font-weight: 550;
+	box-shadow: 1px 0 0 var(--line-strong);
+}
+.gb thead .gb-name { z-index: 4; background: var(--paper-2); }
+.gb tbody tr:hover .gb-name { background: var(--paper-2); }
+
+/* The total rides in the pinned cell rather than a last column, because a last
+   column is the first thing to scroll out of sight on the device this is for. */
+.gb-total {
+	display: block;
+	font-size: .78rem; font-weight: 600; color: var(--ink-2);
+	font-variant-numeric: tabular-nums;
+}
+.gb-total.is-none { color: var(--ink-3); font-weight: 400; }
+.gb-former { display: block; font-size: .7rem; color: var(--ink-3); font-style: italic; }
+
+.gb-cell { padding: 0; position: relative; }
+.gb-cell input {
+	width: 100%; min-width: 5rem; height: var(--tap);
+	margin: 0; border: 1px solid transparent; border-radius: 0;
+	background: transparent;
+	text-align: right; font-variant-numeric: tabular-nums;
+}
+.gb-cell input:hover { background: var(--paper-2); }
+.gb-cell input:focus { background: var(--card); border-color: var(--accent); }
+.gb-cell.is-dirty input { background: var(--accent-soft); }
+.gb-cell.is-bad input { background: var(--bad-soft); border-color: var(--bad); }
+
+/* An auto mark is one the grader will keep refreshing; a manual one is frozen.
+   The dot is the only place a teacher can see which is which. */
+.gb-auto {
+	position: absolute; top: .3rem; left: .3rem;
+	width: 5px; height: 5px; border-radius: 50%;
+	background: var(--ok);
+	pointer-events: none;
+}
+
+.gb-item-x { color: var(--bad); }
 
 /* ============================================================================
    PRINT — the assignment sheet.

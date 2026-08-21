@@ -114,6 +114,57 @@ export type HintRequest = {
 	created_at: string;
 };
 
+export type GradeSource = 'manual' | 'auto';
+
+/**
+ * A column in the gradebook. Either it stands for an assignment this app created
+ * (`assignment_id` set, cells filled in by the grader) or the teacher typed it in
+ * for work done outside the system (`assignment_id` null, cells typed by hand).
+ * Nothing else distinguishes the two, which is why deleting an assignment only
+ * nulls the link — the column carries on as the second kind.
+ *
+ * `points_possible` is the column's own denominator and does not track the
+ * assignment's problems after the fact. Two students can be graded against
+ * different problem sets if the teacher edited the assignment mid-week, and a
+ * column has to mean one thing, so the sync rescales each submission onto this
+ * number rather than letting the column drift.
+ *
+ * No due date, deliberately. See migration 007.
+ */
+export type GradeItem = {
+	id: string;
+	org_id: string;
+	class_id: string;
+	assignment_id: string | null;
+	title: string;
+	points_possible: number;
+	sort_order: number;
+	created_at: string;
+};
+
+/**
+ * One cell: what this student earned on this item.
+ *
+ * `points_earned` is nullable and the null is load-bearing. The course total is
+ * sum(earned)/sum(possible) over marked items only, so an unmarked cell is absent
+ * from the arithmetic rather than a zero. A row that exists with a null is the
+ * teacher having cleared it on purpose — which is what excused means here and,
+ * being `source: 'manual'`, is protected from the grader.
+ *
+ * `source` is a precedence rule, not a label: 'manual' outranks 'auto' forever.
+ */
+export type Grade = {
+	id: string;
+	org_id: string;
+	grade_item_id: string;
+	student_id: string;
+	points_earned: number | null;
+	source: GradeSource;
+	submission_id: string | null;
+	updated_at: string;
+	created_at: string;
+};
+
 /** Colors a class can be tagged with; each maps to a --c-<name> token in app.css. */
 export const CLASS_COLORS = [
 	'slate',

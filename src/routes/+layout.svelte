@@ -19,13 +19,15 @@
 				{ href: '/admin/calendar', label: 'Calendar' },
 				{ href: '/admin/plan', label: 'Plan' },
 				{ href: '/admin/assignments', label: 'Assignments' },
+				{ href: '/admin/gradebook', label: 'Grades' },
 				{ href: '/admin/classes', label: 'Classes' },
 				{ href: '/admin/students', label: 'Students' }
 			];
 		}
 		return [
 			{ href: '/student', label: 'My work' },
-			{ href: '/student/history', label: 'Finished' }
+			{ href: '/student/history', label: 'Finished' },
+			{ href: '/student/grades', label: 'Grades' }
 		];
 	});
 

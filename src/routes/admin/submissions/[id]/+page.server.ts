@@ -1,4 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
+import { recordTeacherGrade } from '$lib/server/gradebook';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -108,6 +109,15 @@ export const actions: Actions = {
 			.eq('id', params.id);
 
 		if (e) return fail(400, { message: e.message });
-		return { message: 'Grade saved.' };
+
+		/*
+		 * Follow the mark into the gradebook. The teacher's own client, so the
+		 * admin policy applies. This claims the cell as manual: they have looked
+		 * at the paper, and a later re-run of the grader must not undo that.
+		 */
+		const { error: gradebookError } = await recordTeacherGrade(locals.supabase, params.id);
+		if (gradebookError) return fail(400, { message: gradebookError });
+
+		return { message: 'Grade saved, and the gradebook with it.' };
 	}
 };

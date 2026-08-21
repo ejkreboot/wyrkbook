@@ -1,5 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { anthropicClient, imageMessage, MODEL, textOf } from '$lib/server/anthropic';
+import { recordAutoGrade } from '$lib/server/gradebook';
 import { supabaseAdmin } from '$lib/server/supabaseAdmin';
 import { filesToImageParts, parseJSON } from '$lib/server/vision';
 import type { RequestHandler } from './$types';
@@ -216,6 +217,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			graded_at: new Date().toISOString()
 		})
 		.eq('id', submissionId);
+
+	/*
+	 * Mirror the mark into the gradebook. Service role because the caller is the
+	 * student and students have no write policy on `grade` — the same reason
+	 * problem_result is written this way.
+	 *
+	 * The gradebook is a snapshot, not the source of truth, so a failure here
+	 * does not take the response down with it: the work is graded either way, and
+	 * the teacher can type the cell. Logged rather than swallowed silently.
+	 */
+	const { error: gradebookError } = await recordAutoGrade(supabaseAdmin, submissionId);
+	if (gradebookError) console.error('gradebook sync failed', submissionId, gradebookError);
 
 	return json({
 		score: Number(finalScore.toFixed(2)),
