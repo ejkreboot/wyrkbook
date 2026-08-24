@@ -9,6 +9,7 @@ import {
 	pinMessage,
 	spendResetPin
 } from '$lib/server/passwords';
+import { THROTTLED, withinLimits } from '$lib/server/rateLimit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -49,10 +50,17 @@ export const actions: Actions = {
 	 * this action is what happens when that lookup has not run, which is to say
 	 * with JavaScript off.
 	 */
-	start: async ({ request, locals }) => {
+	start: async ({ request, locals, getClientAddress }) => {
 		const form = await request.formData();
 		const identifier = String(form.get('identifier') ?? '').trim().toLowerCase();
 		const next = String(form.get('next') ?? '');
+		const ip = getClientAddress();
+
+		// Answering "is this a student?" is a lookup like any other, and this
+		// action answers it for anyone who cannot or will not run /login/mode.
+		if (!(await withinLimits([['lookup:ip', ip]]))) {
+			return fail(429, { stage: 'request', identifier, next, message: THROTTLED });
+		}
 
 		if (!identifier) {
 			return fail(400, { stage: 'request', identifier, next, message: 'Enter your username or email.' });
@@ -71,6 +79,10 @@ export const actions: Actions = {
 			});
 		}
 
+		if (!(await withinLimits([['code:user', identifier], ['code:ip', ip]]))) {
+			return fail(429, { stage: 'request', identifier, next, message: THROTTLED });
+		}
+
 		const { error } = await sendCode(locals, identifier);
 		if (error) {
 			return fail(400, {
@@ -84,11 +96,15 @@ export const actions: Actions = {
 	},
 
 	/** Students. The identifier resolves to the address GoTrue knows them by. */
-	password: async ({ request, locals }) => {
+	password: async ({ request, locals, getClientAddress }) => {
 		const form = await request.formData();
 		const identifier = String(form.get('identifier') ?? '').trim().toLowerCase();
 		const password = String(form.get('password') ?? '');
 		const next = String(form.get('next') ?? '');
+
+		if (!(await withinLimits([['signin:user', identifier], ['signin:ip', getClientAddress()]]))) {
+			return fail(429, { stage: 'password', identifier, next, message: THROTTLED });
+		}
 
 		const found = await findByIdentifier(identifier);
 		const { error } = found
@@ -114,10 +130,14 @@ export const actions: Actions = {
 	},
 
 	/** Resend, from the "check your email" screen. */
-	request: async ({ request, locals }) => {
+	request: async ({ request, locals, getClientAddress }) => {
 		const form = await request.formData();
 		const identifier = String(form.get('identifier') ?? '').trim().toLowerCase();
 		const next = String(form.get('next') ?? '');
+
+		if (!(await withinLimits([['code:user', identifier], ['code:ip', getClientAddress()]]))) {
+			return fail(429, { stage: 'verify', identifier, next, message: THROTTLED });
+		}
 
 		const { error } = await sendCode(locals, identifier);
 		if (error) {
@@ -127,11 +147,16 @@ export const actions: Actions = {
 	},
 
 	/** Teachers. Exchange the emailed code for a session. */
-	verify: async ({ request, locals }) => {
+	verify: async ({ request, locals, getClientAddress }) => {
 		const form = await request.formData();
 		const identifier = String(form.get('identifier') ?? '').trim().toLowerCase();
 		const token = String(form.get('token') ?? '').replace(/\D/g, '');
 		const next = String(form.get('next') ?? '');
+
+		// A mailed code is a credential being guessed at, same as a password.
+		if (!(await withinLimits([['signin:user', identifier], ['signin:ip', getClientAddress()]]))) {
+			return fail(429, { stage: 'verify', identifier, next, message: THROTTLED });
+		}
 
 		/*
 		 * Deliberately not pinned to a digit count. Supabase's mailer_otp_length is
@@ -174,10 +199,19 @@ export const actions: Actions = {
 	 * an unauthenticated endpoint, and an honest answer makes it a way to test
 	 * whether a given student is enrolled here.
 	 */
-	forgot: async ({ request }) => {
+	forgot: async ({ request, getClientAddress }) => {
 		const form = await request.formData();
 		const identifier = String(form.get('identifier') ?? '').trim().toLowerCase();
 		const next = String(form.get('next') ?? '');
+
+		/*
+		 * Tightest limit in the app. Each call throws away the PIN the teacher is
+		 * holding, so someone spamming this can keep a student locked out even
+		 * without guessing anything.
+		 */
+		if (!(await withinLimits([['forgot:user', identifier], ['forgot:ip', getClientAddress()]]))) {
+			return fail(429, { stage: 'password', identifier, next, message: THROTTLED });
+		}
 
 		const found = await findByIdentifier(identifier);
 		// One live PIN per student (migration 008), so repeat clicks replace rather
@@ -190,11 +224,15 @@ export const actions: Actions = {
 	},
 
 	/** Check the PIN before asking for a new password, so a wrong one costs one screen. */
-	pin: async ({ request }) => {
+	pin: async ({ request, getClientAddress }) => {
 		const form = await request.formData();
 		const identifier = String(form.get('identifier') ?? '').trim().toLowerCase();
 		const pin = String(form.get('pin') ?? '').replace(/\D/g, '');
 		const next = String(form.get('next') ?? '');
+
+		if (!(await withinLimits([['pin:ip', getClientAddress()]]))) {
+			return fail(429, { stage: 'pin', identifier, next, message: THROTTLED });
+		}
 
 		const found = await findByIdentifier(identifier);
 		const check = found?.role === 'student' ? await checkResetPin(found.id, pin) : 'none';
@@ -210,13 +248,18 @@ export const actions: Actions = {
 	 * they have just proved who they are, and making them type it again on the
 	 * previous screen is a step with nothing behind it.
 	 */
-	reset: async ({ request, locals }) => {
+	reset: async ({ request, locals, getClientAddress }) => {
 		const form = await request.formData();
 		const identifier = String(form.get('identifier') ?? '').trim().toLowerCase();
 		const pin = String(form.get('pin') ?? '').replace(/\D/g, '');
 		const password = String(form.get('password') ?? '');
 		const confirm = String(form.get('confirm') ?? '');
 		const next = String(form.get('next') ?? '');
+
+		// This action re-checks the PIN, so it is a second way to guess at one.
+		if (!(await withinLimits([['pin:ip', getClientAddress()]]))) {
+			return fail(429, { stage: 'choose', identifier, pin, next, message: THROTTLED });
+		}
 
 		const problem = passwordProblem(password, confirm);
 		if (problem) {
