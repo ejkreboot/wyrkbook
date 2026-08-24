@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { weekLabel } from '$lib/week';
+	import { addWeeks, isCurrentWeek, weekLabel, weekStart } from '$lib/week';
 
 	let { data } = $props();
 
@@ -38,7 +38,18 @@
 
 	{#if myClasses.length}
 		<div>
-			<h2 style="margin-bottom:.6rem">This week · {weekLabel(data.thisWeek)}</h2>
+			<div class="week-nav">
+				<a class="btn btn-sm" href="?week={addWeeks(data.week, -1)}" aria-label="Previous week">←</a>
+				<div class="center">
+					<h2>{weekLabel(data.week)}</h2>
+					{#if isCurrentWeek(data.week)}
+						<span class="today-tag">This week</span>
+					{:else}
+						<a class="small" href="?week={weekStart()}">Jump to this week</a>
+					{/if}
+				</div>
+				<a class="btn btn-sm" href="?week={addWeeks(data.week, 1)}" aria-label="Next week">→</a>
+			</div>
 			<div class="grid grid-2">
 				{#each myClasses as k (k.id)}
 					{@const goals = goalsByClass.get(k.id) ?? []}
@@ -59,7 +70,7 @@
 								{/each}
 							</ul>
 						{:else}
-							<p class="muted small" style="margin:0">Nothing set this week.</p>
+							<p class="muted small" style="margin:0">Nothing set.</p>
 						{/if}
 					</div>
 				{/each}

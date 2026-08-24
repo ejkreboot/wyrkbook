@@ -1,8 +1,10 @@
-import { weekStart } from '$lib/week';
+import { normalizeWeek, weekStart } from '$lib/week';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
-	const week = weekStart();
+export const load: PageServerLoad = async ({ locals, url }) => {
+	// The goals block pages by week; everything else on this page is the live
+	// work queue and stays put as the student browses around.
+	const week = normalizeWeek(url.searchParams.get('week'));
 
 	const [
 		{ data: assignments },
@@ -48,6 +50,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		myClassIds: (enrollments ?? []).map((e) => e.class_id as string),
 		goals: goals ?? [],
 		submissionByAssignment: Object.fromEntries(byAssignment),
-		thisWeek: week
+		week,
+		thisWeek: weekStart()
 	};
 };

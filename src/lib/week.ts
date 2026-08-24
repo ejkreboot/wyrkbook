@@ -76,3 +76,16 @@ export function weeksBetween(a: string, b: string): number {
 export function isCurrentWeek(isoMonday: string): boolean {
 	return isoMonday === weekStart();
 }
+
+/**
+ * A week from user-supplied input (a query string), snapped to its Monday.
+ * Anything unparseable falls back to the current week rather than propagating
+ * a bad date into `addWeeks` and handing the page NaN-dated links.
+ */
+export function normalizeWeek(s: string | null | undefined): string {
+	if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return weekStart();
+	// Round-trip rather than an isNaN check: Date rolls a nonsense month or day
+	// over into a real date, so "2026-13-45" would otherwise pass as February.
+	const d = parseISODate(s);
+	return toISODate(d) === s ? weekStart(d) : weekStart();
+}
