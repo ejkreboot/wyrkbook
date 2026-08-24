@@ -24,12 +24,25 @@
 	);
 	const askingPassword = $derived(stage === 'password');
 
+	/*
+	 * Mirrors profile_username_format (migration 008) and the shape of an address.
+	 * Used for two things: keeping the submit button off until there is something
+	 * worth submitting, and not spending a rate-limited lookup on half a word.
+	 */
+	const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
+	const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+	const identifierOk = $derived.by(() => {
+		const value = identifier.trim().toLowerCase();
+		return USERNAME_RE.test(value) || EMAIL_RE.test(value);
+	});
+
 	let lookup = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
 	async function detect() {
 		const value = identifier.trim().toLowerCase();
-		if (value.length < 3) {
+		if (!identifierOk) {
 			liveMode = null;
 			return;
 		}
@@ -58,8 +71,15 @@
 
 	const submitting = () => {
 		sending = true;
-		return async ({ update }: { update: () => Promise<void> }) => {
-			await update();
+		return async ({ update }: { update: (opts?: { reset?: boolean }) => Promise<void> }) => {
+			/*
+			 * `reset: false` matters. An enhanced submit resets the form on success,
+			 * and `start` succeeding is what moves a student to the password stage —
+			 * so the default would clear the username they just typed out from under
+			 * them, on the one path where they still need it. Which is to say: it
+			 * happened to anyone who clicked Continue before the lookup landed.
+			 */
+			await update({ reset: false });
 			sending = false;
 		};
 	};
@@ -122,7 +142,11 @@
 					</div>
 				{/if}
 
-				<button class="btn btn-primary btn-block" type="submit" disabled={sending}>
+				<button
+					class="btn btn-primary btn-block"
+					type="submit"
+					disabled={sending || !identifierOk}
+				>
 					{#if sending}<span class="spinner"></span> Just a moment…
 					{:else if askingPassword}Sign in
 					{:else}Continue{/if}
@@ -130,8 +154,18 @@
 
 				{#if askingPassword}
 					<!-- Same form, different action: the username is already in it, and
-					     this way it works with JavaScript off too. -->
-					<button class="btn btn-ghost btn-block btn-sm" type="submit" formaction="?/forgot" style="margin-top:.75rem">
+					     this way it works with JavaScript off too. `formnovalidate` because
+					     the point of this button is that the password box is empty — without
+					     it the browser blocks the submit demanding the very thing they came
+					     here to say they don't have. -->
+					<button
+						class="btn btn-ghost btn-block btn-sm"
+						type="submit"
+						formaction="?/forgot"
+						formnovalidate
+						disabled={sending || !identifierOk}
+						style="margin-top:.75rem"
+					>
 						I forgot my password
 					</button>
 				{/if}
