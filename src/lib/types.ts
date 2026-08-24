@@ -5,7 +5,26 @@ export type Profile = {
 	org_id: string | null;
 	role: Role;
 	display_name: string;
+	/**
+	 * A student's is synthesized from their username and cannot receive mail —
+	 * only teachers and sysadmins have a real one. See migration 008.
+	 */
 	email: string;
+	/** Students only; what they type to sign in. Null for everyone else. */
+	username: string | null;
+	created_at: string;
+};
+
+/**
+ * The one-time PIN a student trades for a new password. Held in the clear on
+ * purpose — the teacher has to read it out — and worth exactly one reset.
+ */
+export type PasswordReset = {
+	student_id: string;
+	org_id: string;
+	pin: string;
+	attempts: number;
+	expires_at: string;
 	created_at: string;
 };
 

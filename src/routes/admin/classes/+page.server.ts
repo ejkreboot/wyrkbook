@@ -8,7 +8,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		locals.supabase.from('class').select('*').order('archived').order('name'),
 		locals.supabase
 			.from('profile')
-			.select('id, display_name, email')
+			.select('id, display_name, username')
 			.eq('role', 'student')
 			.order('display_name'),
 		locals.supabase.from('enrollment').select('class_id, student_id')

@@ -5,7 +5,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const { data: submission } = await locals.supabase
 		.from('submission')
-		.select('*, assignment(*), profile:student_id(display_name, email)')
+		.select('*, assignment(*), profile:student_id(display_name, username)')
 		.eq('id', params.id)
 		.maybeSingle();
 

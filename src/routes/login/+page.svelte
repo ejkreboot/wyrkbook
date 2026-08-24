@@ -3,11 +3,66 @@
 
 	let { data, form } = $props();
 
-	// The page is a two-step wizard held entirely in form state: ask for the
-	// address, then ask for the code that just landed in the inbox.
-	const stage = $derived(form?.stage === 'verify' && !form?.message ? 'verify' : (form?.stage === 'verify' ? 'verify' : 'request'));
-	const email = $derived(form?.email ?? '');
+	/*
+	 * Two audiences, one door. Teachers get a code in the mail; students, who
+	 * mostly have no inbox to get it in, get a username and a password. Which
+	 * question to ask is the server's to answer — /login/mode answers it as the
+	 * identifier is typed so the password box is already there by the time they
+	 * reach for it, and the `start` action answers it on submit when there is no
+	 * JavaScript to ask with.
+	 */
+	let liveMode = $state<'password' | 'otp' | null>(null);
+	// Seeded from `form`, not derived from it: this is what the person is typing.
+	// The initial value only matters on the no-JavaScript path, where the whole
+	// component is remounted after each submit and would otherwise come back blank.
+	let identifier = $state(form?.identifier ?? '');
 	let sending = $state(false);
+
+	const serverStage = $derived(form?.stage ?? 'request');
+	const stage = $derived(
+		serverStage === 'request' && liveMode === 'password' ? 'password' : serverStage
+	);
+	const askingPassword = $derived(stage === 'password');
+
+	let lookup = 0;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	async function detect() {
+		const value = identifier.trim().toLowerCase();
+		if (value.length < 3) {
+			liveMode = null;
+			return;
+		}
+		// Late answers to superseded questions would flip the form under the
+		// person typing, so only the newest lookup is allowed to land.
+		const mine = ++lookup;
+		try {
+			const res = await fetch('/login/mode', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ identifier: value })
+			});
+			const { mode } = await res.json();
+			if (mine === lookup) liveMode = mode;
+		} catch {
+			// Offline or blocked: fall back to the submit-time fork, which is the
+			// same decision made one round trip later.
+		}
+	}
+
+	function onIdentifierInput() {
+		clearTimeout(timer);
+		liveMode = null;
+		timer = setTimeout(detect, 350);
+	}
+
+	const submitting = () => {
+		sending = true;
+		return async ({ update }: { update: () => Promise<void> }) => {
+			await update();
+			sending = false;
+		};
+	};
 </script>
 
 <div class="wrap wrap-narrow" style="padding-top:3rem">
@@ -25,59 +80,70 @@
 			<div class="alert alert-bad" style="margin-bottom:1rem">{form.message}</div>
 		{/if}
 
-		{#if stage === 'request'}
+		{#if stage === 'request' || stage === 'password'}
 			<h2 style="margin-bottom:.25rem">Sign in</h2>
 			<p class="muted small" style="margin-bottom:1rem">
-				We'll email you a 6-digit code. No password to remember.
+				{#if askingPassword}
+					Type the password you chose.
+				{:else}
+					Students sign in with their username. Teachers, use your email.
+				{/if}
 			</p>
 
-			<form
-				method="POST"
-				action="?/request"
-				use:enhance={() => {
-					sending = true;
-					return async ({ update }) => {
-						await update();
-						sending = false;
-					};
-				}}
-			>
-				<input type="hidden" name="next" value={data.next} />
+			<form method="POST" action={askingPassword ? '?/password' : '?/start'} use:enhance={submitting}>
+				<input type="hidden" name="next" value={form?.next ?? data.next} />
 				<div class="field">
-					<label for="email">Email address</label>
+					<label for="identifier">Username or email</label>
 					<input
-						id="email"
-						name="email"
-						type="email"
-						autocomplete="email"
-						inputmode="email"
+						id="identifier"
+						name="identifier"
+						type="text"
+						autocomplete="username"
+						autocapitalize="none"
+						spellcheck="false"
 						required
-						value={email}
-						placeholder="you@example.com"
+						bind:value={identifier}
+						oninput={onIdentifierInput}
+						onblur={detect}
+						placeholder="jamie  ·  you@example.com"
 					/>
 				</div>
+
+				{#if askingPassword}
+					<div class="field">
+						<label for="password">Password</label>
+						<input
+							id="password"
+							name="password"
+							type="password"
+							autocomplete="current-password"
+							required
+						/>
+					</div>
+				{/if}
+
 				<button class="btn btn-primary btn-block" type="submit" disabled={sending}>
-					{#if sending}<span class="spinner"></span> Sending…{:else}Email me a code{/if}
+					{#if sending}<span class="spinner"></span> Just a moment…
+					{:else if askingPassword}Sign in
+					{:else}Continue{/if}
 				</button>
+
+				{#if askingPassword}
+					<!-- Same form, different action: the username is already in it, and
+					     this way it works with JavaScript off too. -->
+					<button class="btn btn-ghost btn-block btn-sm" type="submit" formaction="?/forgot" style="margin-top:.75rem">
+						I forgot my password
+					</button>
+				{/if}
 			</form>
-		{:else}
+		{:else if stage === 'verify'}
 			<h2 style="margin-bottom:.25rem">Check your email</h2>
 			<p class="muted small" style="margin-bottom:1rem">
-				We sent a code to <strong>{email}</strong>.
+				We sent a code to <strong>{form?.identifier}</strong>.
 			</p>
 
-			<form
-				method="POST"
-				action="?/verify"
-				use:enhance={() => {
-					sending = true;
-					return async ({ update }) => {
-						await update();
-						sending = false;
-					};
-				}}
-			>
-				<input type="hidden" name="email" value={email} />
+			<form method="POST" action="?/verify" use:enhance={submitting}>
+				<input type="hidden" name="identifier" value={form?.identifier} />
 				<input type="hidden" name="next" value={form?.next ?? data.next} />
 				<div class="field">
 					<label for="token">Sign-in code</label>
@@ -101,10 +167,80 @@
 			</form>
 
 			<form method="POST" action="?/request" style="margin-top:.75rem">
-				<input type="hidden" name="email" value={email} />
+				<input type="hidden" name="identifier" value={form?.identifier} />
 				<input type="hidden" name="next" value={form?.next ?? data.next} />
-				<button class="btn btn-ghost btn-block btn-sm" type="submit">
-					Send a new code
+				<button class="btn btn-ghost btn-block btn-sm" type="submit">Send a new code</button>
+			</form>
+		{:else if stage === 'pin'}
+			<h2 style="margin-bottom:.25rem">Ask your teacher</h2>
+			<p class="muted small" style="margin-bottom:1rem">
+				Your teacher has a six-digit reset code for you on their People page. Type it in
+				here and you can pick a new password. Nobody but you will know it.
+			</p>
+
+			<form method="POST" action="?/pin" use:enhance={submitting}>
+				<input type="hidden" name="identifier" value={form?.identifier} />
+				<input type="hidden" name="next" value={form?.next ?? data.next} />
+				<div class="field">
+					<label for="pin">Reset code</label>
+					<!-- svelte-ignore a11y_autofocus -->
+					<input
+						id="pin"
+						name="pin"
+						class="otp-input"
+						type="text"
+						inputmode="numeric"
+						maxlength="6"
+						pattern="[0-9]*"
+						required
+						autofocus
+					/>
+				</div>
+				<button class="btn btn-primary btn-block" type="submit" disabled={sending}>
+					{#if sending}<span class="spinner"></span> Checking…{:else}Continue{/if}
+				</button>
+			</form>
+
+			<p class="muted small center" style="margin-top:.75rem">
+				<a href="/login">Back to sign in</a>
+			</p>
+		{:else if stage === 'choose'}
+			<h2 style="margin-bottom:.25rem">Pick a new password</h2>
+			<p class="muted small" style="margin-bottom:1rem">
+				Choose something you'll remember. Keep it to yourself — your teacher doesn't
+				need it and can't see it.
+			</p>
+
+			<form method="POST" action="?/reset" use:enhance={submitting}>
+				<input type="hidden" name="identifier" value={form?.identifier} />
+				<input type="hidden" name="pin" value={form?.pin} />
+				<input type="hidden" name="next" value={form?.next ?? data.next} />
+				<div class="field">
+					<label for="new-password">New password</label>
+					<!-- svelte-ignore a11y_autofocus -->
+					<input
+						id="new-password"
+						name="password"
+						type="password"
+						autocomplete="new-password"
+						minlength="6"
+						required
+						autofocus
+					/>
+				</div>
+				<div class="field">
+					<label for="confirm">Type it again</label>
+					<input
+						id="confirm"
+						name="confirm"
+						type="password"
+						autocomplete="new-password"
+						minlength="6"
+						required
+					/>
+				</div>
+				<button class="btn btn-primary btn-block" type="submit" disabled={sending}>
+					{#if sending}<span class="spinner"></span> Saving…{:else}Save and sign in{/if}
 				</button>
 			</form>
 		{/if}

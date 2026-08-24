@@ -73,13 +73,13 @@
 		{#if data.people.length}
 			<table class="responsive">
 				<thead>
-					<tr><th>Name</th><th>Email</th><th>Role</th><th>Organization</th><th></th></tr>
+					<tr><th>Name</th><th>Sign-in</th><th>Role</th><th>Organization</th><th></th></tr>
 				</thead>
 				<tbody>
 					{#each data.people as p (p.id)}
 						<tr>
 							<td data-label="Name">{p.display_name}</td>
-							<td data-label="Email" class="mono">{p.email}</td>
+							<td data-label="Sign-in" class="mono">{p.username ?? p.email}</td>
 							<td data-label="Role"><span class="badge">{p.role}</span></td>
 							<td data-label="Organization">{orgName(p.org_id)}</td>
 							<td data-label="">
