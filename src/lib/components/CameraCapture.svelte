@@ -207,7 +207,8 @@
 		</span>
 	</div>
 	<p class="muted small" style="margin:0">
-		To use your iPhone: same Apple ID as this Mac, phone locked and held in landscape with the
-		rear camera facing the page, then pick it above. A stand over the open book works best.
+		In Safari an iPhone can appear here: same Apple ID as this Mac, phone locked and held in
+		landscape with the rear camera facing the page. Chrome doesn't list it — use “Use your phone…”
+		instead.
 	</p>
 </div>

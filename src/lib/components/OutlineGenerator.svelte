@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
+	import PhoneCapture from '$lib/components/PhoneCapture.svelte';
 	import { shrinkImage, UPLOAD_BUDGET } from '$lib/shrinkImage';
 	import {
 		DEFAULT_OUTLINE_LEVEL,
@@ -12,15 +13,20 @@
 	export type Outcome = 'done' | 'stopped' | 'error';
 
 	let {
+		resourceId,
 		classId,
 		className,
+		phone,
 		onstart,
 		ontext,
 		onend,
 		onclose
 	}: {
+		resourceId: string;
 		classId: string;
 		className: string;
+		/** The QR and Realtime topic for sending pages from a phone. */
+		phone: { url: string; qr: string; topic: string };
 		/** The first byte of the outline is about to arrive. */
 		onstart: () => void;
 		ontext: (text: string) => void;
@@ -40,6 +46,7 @@
 	let problem = $state('');
 	let controller = $state.raw<AbortController>();
 	let camera = $state(false);
+	let phoneOpen = $state(false);
 
 	// Sparseness is remembered per class: it moves with the term, one class at a time.
 	const levelKey = $derived(`wyrkbook:outline-level:${classId}`);
@@ -104,6 +111,8 @@
 	async function generate() {
 		if (!pages.length || busy) return;
 		camera = false;
+		// Closing it also clears anything the phone is still sending.
+		phoneOpen = false;
 		busy = true;
 		problem = '';
 		status = 'Preparing photos…';
@@ -198,7 +207,8 @@
 	</div>
 	<p class="muted small" style="margin:0">
 		Photograph each page straight on, in good light, in order. The photos go to the AI and are
-		discarded — they are never stored. The outline is added below anything already written.
+		discarded. Photos sent from a phone pass through private storage only until they arrive here.
+		The outline is added below anything already written.
 	</p>
 
 	{#if pages.length}
@@ -227,10 +237,21 @@
 
 	{#if camera}
 		<CameraCapture remaining={MAX_PAGES - pages.length} oncapture={addPage} onclose={() => (camera = false)} />
+	{:else if phoneOpen}
+		<PhoneCapture
+			{resourceId}
+			{...phone}
+			remaining={MAX_PAGES - pages.length}
+			oncapture={addPage}
+			onclose={() => (phoneOpen = false)}
+		/>
 	{:else if pages.length < MAX_PAGES && !busy}
-		<button class="btn btn-sm" type="button" style="align-self:flex-start" onclick={() => (camera = true)}>
-			Use a camera on this computer…
-		</button>
+		<div class="row" style="gap:.5rem;flex-wrap:wrap">
+			<button class="btn btn-sm" type="button" onclick={() => (phoneOpen = true)}>Use your phone…</button>
+			<button class="btn btn-sm" type="button" onclick={() => (camera = true)}>
+				Use a camera on this computer…
+			</button>
+		</div>
 	{/if}
 
 	<div class="stack" style="gap:.4rem">
