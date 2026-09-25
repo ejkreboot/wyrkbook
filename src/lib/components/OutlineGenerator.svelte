@@ -1,33 +1,36 @@
+<script lang="ts" module>
+	import type { OutlineLevel } from '$lib/outlineLevels';
+
+	export type Generated = { guided: string; level: OutlineLevel; instructions: string; append: boolean };
+</script>
+
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import PhoneCapture from '$lib/components/PhoneCapture.svelte';
 	import { shrinkImage, UPLOAD_BUDGET } from '$lib/shrinkImage';
-	import {
-		DEFAULT_OUTLINE_LEVEL,
-		isOutlineLevel,
-		OUTLINE_LEVELS,
-		type OutlineLevel
-	} from '$lib/outlineLevels';
-
-	export type Outcome = 'done' | 'stopped' | 'error';
+	import { streamOutline } from '$lib/outlineStream';
+	import { levelInfo, OUTLINE_LEVELS, rememberedLevel, rememberLevel } from '$lib/outlineLevels';
 
 	let {
 		resourceId,
 		classId,
 		className,
-		onstart,
-		ontext,
-		onend,
+		existing,
+		ongenerated,
 		onclose
 	}: {
 		resourceId: string;
 		classId: string;
 		className: string;
-		/** The first byte of the outline is about to arrive. */
-		onstart: () => void;
-		ontext: (text: string) => void;
-		/** 'error' means what streamed in should be thrown away; 'stopped' keeps it. */
-		onend: (outcome: Outcome) => void;
+		/** The outline already generated for this resource, which new pages can be appended to. */
+		existing: { guided: string; level: OutlineLevel } | null;
+		/**
+		 * The pages are always read into a Guided outline; the editor writes the
+		 * level picked here from it, and keeps it for moving between levels later.
+		 * When appending, `guided` is only the lines that continue the existing
+		 * Guided outline, and `level` is the existing outline's.
+		 */
+		ongenerated: (result: Generated) => void;
 		onclose: () => void;
 	} = $props();
 
@@ -35,34 +38,25 @@
 
 	type Page = { file: File; preview: string };
 	let pages = $state<Page[]>([]);
-	let level = $state<OutlineLevel>(DEFAULT_OUTLINE_LEVEL);
+	let level = $state<OutlineLevel>('standard');
 	let instructions = $state('');
+	let append = $state(false);
+	const appending = $derived(append && !!existing);
 	let busy = $state(false);
 	let status = $state('');
 	let problem = $state('');
 	let controller = $state.raw<AbortController>();
 	let dragging = $state(false);
 
-	// Sparseness is remembered per class: it moves with the term, one class at a time.
-	const levelKey = $derived(`wyrkbook:outline-level:${classId}`);
 	$effect(() => {
-		try {
-			const saved = localStorage.getItem(levelKey);
-			level = isOutlineLevel(saved) ? saved : DEFAULT_OUTLINE_LEVEL;
-		} catch {
-			level = DEFAULT_OUTLINE_LEVEL;
-		}
+		level = rememberedLevel(classId);
 	});
 	function pickLevel(l: OutlineLevel) {
 		level = l;
-		try {
-			localStorage.setItem(levelKey, l);
-		} catch {
-			// Private window or blocked storage: it just won't be remembered.
-		}
+		rememberLevel(classId, l);
 	}
 
-	const levelHint = $derived(OUTLINE_LEVELS.find((l) => l.id === level)?.hint ?? '');
+	const levelHint = $derived(levelInfo(level).hint);
 
 	function onPick(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
@@ -133,73 +127,42 @@
 
 		const form = new FormData();
 		for (const f of prepared) form.append('images', f);
-		form.append('level', level);
 		form.append('class_name', className);
 		form.append('instructions', instructions);
+		if (appending) form.append('continues', existing!.guided);
 
 		controller = new AbortController();
-		let outcome: Outcome = 'error';
-		let started = false;
 		status = 'Sending pages…';
+		let guided = '';
 
-		try {
-			const res = await fetch('/api/outline', { method: 'POST', body: form, signal: controller.signal });
-			if (!res.ok || !res.body) {
-				problem = tidyError(await res.text(), res.status);
-				return;
+		const result = await streamOutline(
+			'/api/outline',
+			{ body: form, signal: controller.signal },
+			{
+				start: () => (status = 'Reading the pages…'),
+				status: (phase) => (status = phase === 'writing' ? 'Outlining…' : 'Reading the pages…'),
+				text: (t) => (guided += t)
 			}
-			onstart();
-			started = true;
-			status = 'Reading the pages…';
+		);
 
-			const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-			let buffered = '';
-			for (;;) {
-				const { value, done } = await reader.read();
-				if (done) break;
-				buffered += value;
-				let nl: number;
-				while ((nl = buffered.indexOf('\n')) !== -1) {
-					const line = buffered.slice(0, nl).trim();
-					buffered = buffered.slice(nl + 1);
-					if (!line) continue;
-					const event = JSON.parse(line) as { text?: string; status?: string; done?: boolean; error?: string };
-					if (event.text) {
-						status = 'Writing the outline…';
-						ontext(event.text);
-					} else if (event.error) {
-						problem = event.error;
-					} else if (event.done) {
-						outcome = 'done';
-					}
-				}
-			}
-			if (outcome !== 'done' && !problem) problem = 'The connection closed before the outline was finished.';
-		} catch {
-			if (controller?.signal.aborted) outcome = 'stopped';
-			else problem = 'The request failed. Check your connection and try again.';
-		} finally {
-			busy = false;
-			status = '';
-			controller = undefined;
-			if (started) onend(outcome);
-			if (outcome === 'done') clearPages();
-		}
+		busy = false;
+		status = '';
+		controller = undefined;
+		// Stopped before it finished: an unfinished Guided outline is no use to derive from.
+		if (result.outcome === 'error') problem = result.problem;
+		if (result.outcome !== 'done') return;
+
+		clearPages();
+		ongenerated({
+			guided,
+			level: appending ? existing!.level : level,
+			instructions: instructions.trim(),
+			append: appending
+		});
 	}
 
 	function stop() {
 		controller?.abort();
-	}
-
-	/** SvelteKit `error()` responses are JSON; fall back to the raw text. */
-	function tidyError(text: string, code: number) {
-		try {
-			return JSON.parse(text).message ?? `Request failed (${code}).`;
-		} catch {
-			return code === 413
-				? 'Those photos are too large to send together. Try fewer pages.'
-				: text.slice(0, 200) || `Request failed (${code}).`;
-		}
 	}
 </script>
 
@@ -255,17 +218,30 @@
 		<input id="gen-shot" class="sr-only" type="file" accept="image/*" capture="environment" multiple onchange={onPick} disabled={busy} />
 	{/if}
 
-	<div class="stack" style="gap:.4rem">
-		<div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
-			<span class="small" style="font-weight:600">Sparseness</span>
-			<div class="seg" role="group" aria-label="Sparseness">
-				{#each OUTLINE_LEVELS as l (l.id)}
-					<button type="button" aria-pressed={level === l.id} onclick={() => pickLevel(l.id)} disabled={busy}>{l.label}</button>
-				{/each}
+	{#if existing}
+		<label class="check small">
+			<input type="checkbox" bind:checked={append} disabled={busy} />
+			Append to the outline already here — for the pages that come after it
+		</label>
+	{/if}
+
+	{#if appending}
+		<span class="muted small">
+			The new pages are added to the end of the outline, at its level ({levelInfo(existing!.level).label}).
+		</span>
+	{:else}
+		<div class="stack" style="gap:.4rem">
+			<div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
+				<span class="small" style="font-weight:600">Sparseness</span>
+				<div class="seg" role="group" aria-label="Sparseness">
+					{#each OUTLINE_LEVELS as l (l.id)}
+						<button type="button" aria-pressed={level === l.id} onclick={() => pickLevel(l.id)} disabled={busy}>{l.label}</button>
+					{/each}
+				</div>
 			</div>
+			<span class="muted small">{levelHint}</span>
 		</div>
-		<span class="muted small">{levelHint}</span>
-	</div>
+	{/if}
 
 	<label class="stack" style="gap:.3rem">
 		<span class="small" style="font-weight:600">Anything to add <span class="muted">(optional)</span></span>
@@ -288,7 +264,7 @@
 			<span class="muted small" role="status"><span class="spinner"></span> {status}</span>
 		{:else}
 			<button class="btn btn-primary" type="button" onclick={generate} disabled={!pages.length}>
-				Generate outline{pages.length ? ` from ${pages.length} page${pages.length === 1 ? '' : 's'}` : ''}
+				{appending ? 'Append' : 'Generate outline'}{pages.length ? ` from ${pages.length} page${pages.length === 1 ? '' : 's'}` : ''}
 			</button>
 		{/if}
 	</div>

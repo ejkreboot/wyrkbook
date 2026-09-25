@@ -1,3 +1,5 @@
+import type { OutlineLevel } from './outlineLevels';
+
 export type Role = 'sysadmin' | 'admin' | 'student';
 
 export type Profile = {
@@ -239,4 +241,17 @@ export type CurriculumResource = {
 	created_by: string | null;
 	created_at: string;
 	updated_at: string;
+	/** The Guided outline behind a generated outline in `body` — see migration 012. */
+	outline_source: OutlineSource | null;
+};
+
+export type OutlineSource = {
+	guided: string;
+	level: OutlineLevel;
+	instructions: string;
+	/** The outline's [start, end) range in `body`. */
+	start: number;
+	end: number;
+	/** The teacher has changed something inside that range since it was written. */
+	edited: boolean;
 };

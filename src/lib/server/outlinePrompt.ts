@@ -2,12 +2,18 @@
  * The instructions for turning textbook photos into a lecture outline — the
  * server-side counterpart of scripts/outline-skill.md.
  *
+ * Two requests share one system prompt, so the second is a cache hit on the
+ * first: outlineParams reads the photos and writes the Guided outline, and
+ * relevelParams rewrites that Guided outline at another level from the text
+ * alone. The level is named in the user turn for the same reason.
+ *
  * The reference outline lives in outline-example.md so it can be edited as the
  * Markdown it is. It is passed in rather than imported here, because the route
  * reads it with Vite's `?raw` and scripts/test-outline.ts, under plain tsx,
  * reads it from disk.
  */
-import type { OutlineLevel } from '../outlineLevels.ts';
+import type Anthropic from '@anthropic-ai/sdk';
+import { levelInfo, type OutlineLevel } from '../outlineLevels.ts';
 
 const LEVEL_TEXT: Record<OutlineLevel, string> = {
 	guided: `Guided — early in the course, while students are still learning to take notes. Give the structure in full, down to the third level. Make roughly half the items fill-in sentences with [[blanks]] for the key terms and facts, and make the rest specific prompts ("Define a dependent system:") with writing space. About two or three prompts per paragraph of text.`,
@@ -19,8 +25,10 @@ const LEVEL_TEXT: Record<OutlineLevel, string> = {
 	skeletal: `Skeletal — students take their own notes. Give only the sections and subsections, each with generous writing space (four to six lines). No fill-in blanks and no third level.`
 };
 
-export function outlineSystemPrompt(level: OutlineLevel, example: string): string {
-	return `You turn photos of textbook pages into a lecture outline. Students get a printed copy and fill it in while their teacher lectures, so the outline is a note-taking scaffold: it tells them what to listen for and gives them a place to write it, and leaves the content itself for them to write. It should help them learn the material and learn how to take notes. Don't spoon-feed.
+export function outlineSystemPrompt(example: string): string {
+	return `You write lecture outlines from photos of textbook pages. Students get a printed copy and fill it in while their teacher lectures, so the outline is a note-taking scaffold: it tells them what to listen for and gives them a place to write it, and leaves the content itself for them to write. It should help them learn the material and learn how to take notes. Don't spoon-feed.
+
+You are asked to outline the photos, to continue an outline you wrote with the pages that follow, or to rewrite an outline you wrote at a different sparseness level. A continuation is only the lines that carry the outline on, so it leaves out the heading and the block's fences.
 
 # Format
 
@@ -52,22 +60,119 @@ Reply with the outline in Markdown and nothing else: no preamble, no closing rem
 
 # Sparseness
 
-${LEVEL_TEXT[level]}
+The teacher picks one of four levels, from the most hand-holding to the least, and moves a class down them over the term. Each request names the level to write.
+
+${Object.values(LEVEL_TEXT)
+	.map((t) => `- ${t}`)
+	.join('\n')}
 
 # Reference outline
 
-A teacher wrote this outline for part of an algebra chapter. It is the Standard level. Match its voice and shape, and set its density by the sparseness level above.
+A teacher wrote this outline for part of an algebra chapter. It is the Standard level. Match its voice and shape, and set its density by the level the request names.
 
 ${example.trim()}
 `;
 }
 
-export function outlineUserText(opts: { pages: number; className: string; instructions: string }): string {
-	const lines = [
-		`These ${opts.pages === 1 ? 'photo is a page' : `${opts.pages} photos are pages`} of the textbook${opts.pages === 1 ? '' : ', in order'}.`
+type Common = {
+	model: string;
+	/** The reference outline, outline-example.md. */
+	example: string;
+	className: string;
+	instructions: string;
+};
+
+function teacherLines({ className, instructions }: Pick<Common, 'className' | 'instructions'>) {
+	const lines: string[] = [];
+	if (className) lines.push(`The class is "${className}".`);
+	if (instructions) lines.push(`The teacher adds:\n\n${instructions}`);
+	return lines;
+}
+
+function system(example: string): Anthropic.TextBlockParam[] {
+	return [{ type: 'text', text: outlineSystemPrompt(example), cache_control: { type: 'ephemeral' } }];
+}
+
+const CONTINUATION = `only the new items, as they go inside the \`::: outline\` block after its last line, with no heading and no \`:::\` lines`;
+
+/**
+ * Photos in, the Guided outline out. Reading the pages is the hard part, so this
+ * one thinks hard. With `continues` — the Guided outline of the pages before
+ * these — it writes only the lines that carry that outline on.
+ */
+export function outlineParams(
+	opts: Common & { images: { media_type: string; data: string }[]; continues?: string }
+): Anthropic.MessageStreamParams {
+	const n = opts.images.length;
+	const pages = `${n === 1 ? 'This photo is a page' : `These ${n} photos are pages`} of the textbook${n === 1 ? '' : ', in order'}.`;
+	const text = opts.continues?.trim()
+		? [
+				`${pages} They pick up where the pages you outlined earlier left off. This is the Guided outline of those:\n\n<outline_so_far>\n${opts.continues.trim()}\n</outline_so_far>`,
+				...teacherLines(opts),
+				`Write the Guided outline of these new pages as a continuation of it: ${CONTINUATION}. Carry on its section numbering, and if the pages carry on the section it ends in, carry on inside that section rather than starting a new top-level item.`
+			]
+		: [pages, ...teacherLines(opts), `Write the outline at the ${levelInfo('guided').label} level.`];
+
+	return {
+		model: opts.model,
+		max_tokens: 64000,
+		thinking: { type: 'adaptive' },
+		output_config: { effort: 'high' },
+		system: system(opts.example),
+		messages: [
+			{
+				role: 'user',
+				content: [
+					...opts.images.map((img) => ({
+						type: 'image' as const,
+						source: {
+							type: 'base64' as const,
+							media_type: img.media_type as 'image/jpeg' | 'image/png' | 'image/webp',
+							data: img.data
+						}
+					})),
+					{ type: 'text', text: text.join('\n\n') }
+				]
+			}
+		]
+	};
+}
+
+/**
+ * The Guided outline in, the same outline at another level out — no photos, so
+ * it is quick and cheap. `current` is the outline as it stands in the teacher's
+ * document, sent only when they have edited it, so their changes carry over.
+ *
+ * With `addition` — the Guided continuation written from pages added later — it
+ * writes only that continuation, at the level of `current`, to add to its end.
+ */
+export function relevelParams(
+	opts: Common & { guided: string; current: string; level: OutlineLevel; addition?: string }
+): Anthropic.MessageStreamParams {
+	const label = levelInfo(opts.level).label;
+	const parts = [
+		`You outlined some textbook pages earlier at the Guided level. The photos are gone; this outline is your record of the pages, so work only from it.\n\n<guided_outline>\n${opts.guided.trim()}\n</guided_outline>`
 	];
-	if (opts.className) lines.push(`The class is "${opts.className}".`);
-	if (opts.instructions) lines.push(`The teacher adds:\n\n${opts.instructions}`);
-	lines.push('Write the outline.');
-	return lines.join('\n\n');
+	if (opts.addition?.trim()) {
+		parts.push(
+			`The teacher then photographed the pages that follow, and you outlined them at the Guided level as this continuation:\n\n<continuation>\n${opts.addition.trim()}\n</continuation>`,
+			`The teacher's document has the outline of the earlier pages at the ${label} level:\n\n<current_outline>\n${opts.current.trim()}\n</current_outline>`,
+			...teacherLines(opts),
+			`Write the continuation at the ${label} level, to follow on from the document's outline: ${CONTINUATION}.`
+		);
+	} else if (opts.current.trim()) {
+		parts.push(
+			`The teacher has been working from a version of it and has edited it. This is the version in their document now:\n\n<current_outline>\n${opts.current.trim()}\n</current_outline>\n\nCarry the teacher's edits into the new outline wherever the level has room for them: their wording, answers and teacher notes win over the Guided outline, items they removed stay out, and items they added stay in.`
+		);
+	}
+	if (!opts.addition?.trim()) parts.push(...teacherLines(opts), `Rewrite the outline at the ${label} level.`);
+
+	return {
+		model: opts.model,
+		max_tokens: 64000,
+		thinking: { type: 'adaptive' },
+		output_config: { effort: 'low' },
+		system: system(opts.example),
+		messages: [{ role: 'user', content: parts.join('\n\n') }]
+	};
 }

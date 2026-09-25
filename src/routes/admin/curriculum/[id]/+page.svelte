@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { beforeNavigate } from '$app/navigation';
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
-	import OutlineGenerator, { type Outcome } from '$lib/components/OutlineGenerator.svelte';
+	import OutlineGenerator, { type Generated } from '$lib/components/OutlineGenerator.svelte';
 	import { countNotes } from '$lib/markdown';
+	import { levelInfo, OUTLINE_LEVELS, rememberLevel, type OutlineLevel } from '$lib/outlineLevels';
+	import { asLines, closingFence, continueOutline, followEdit } from '$lib/outlineRegion';
+	import { streamOutline } from '$lib/outlineStream';
+	import type { OutlineSource } from '$lib/types';
 	import { weekLabel } from '$lib/week';
 
 	let { data, form } = $props();
@@ -22,13 +26,23 @@
 	let classId = $derived(data.resource.class_id);
 	let week = $derived(data.resource.week_start ?? '');
 	let body = $derived(data.resource.body);
+	let source = $derived(data.resource.outline_source);
 
-	const fingerprint = (t: string, c: string, w: string, b: string) =>
-		JSON.stringify([t.trim(), c, w, b]);
+	// Field by field, because the database hands jsonb back with its keys reordered.
+	const sourcePrint = (o: OutlineSource | null) =>
+		o && [o.guided, o.level, o.instructions, o.start, o.end, o.edited];
+	const fingerprint = (t: string, c: string, w: string, b: string, o: OutlineSource | null) =>
+		JSON.stringify([t.trim(), c, w, b, sourcePrint(o)]);
 	const baseline = $derived(
-		fingerprint(data.resource.title, data.resource.class_id, data.resource.week_start ?? '', data.resource.body)
+		fingerprint(
+			data.resource.title,
+			data.resource.class_id,
+			data.resource.week_start ?? '',
+			data.resource.body,
+			data.resource.outline_source
+		)
 	);
-	const dirty = $derived(fingerprint(title, classId, week, body) !== baseline);
+	const dirty = $derived(fingerprint(title, classId, week, body, source) !== baseline);
 
 	// Open to the rendered page when there is something to read — this is also
 	// where the teacher lectures from — and straight into writing when there is not.
@@ -45,29 +59,158 @@
 	let ta = $state<HTMLTextAreaElement>();
 
 	/*
-	 * Outline generation streams into the body. It is added below whatever is
-	 * already written, the textarea is read-only while it runs, and a failed run
-	 * puts the body back exactly as it was.
+	 * Outline generation. The generator reads the pages into a Guided outline;
+	 * `source` keeps it (and saves it with the resource), along with where the
+	 * outline written from it sits in the body. The level the teacher wants is
+	 * written from the Guided outline — no photos needed — whether it is the
+	 * first outline, a move to another level, or pages appended later, and it
+	 * streams into the body as it comes. The textarea is read-only meanwhile.
+	 *
+	 * A run that fails changes nothing, and can be retried from what is in memory
+	 * without photographing the pages again.
 	 */
 	let genOpen = $state(false);
 	let generating = $state(false);
-	let beforeGen = '';
+	let genStatus = $state('');
+	let genProblem = $state('');
+	let genRetry = $state<(() => void) | null>(null);
+	let genController: AbortController | undefined;
+	onDestroy(() => genController?.abort());
 
-	function genStart() {
-		beforeGen = body;
-		body = body.trim() ? body.replace(/\s*$/, '') + '\n\n' : '';
-		generating = true;
-		if (mode !== 'split') mode = 'split';
+	function onBodyInput(next: string) {
+		if (source) {
+			const { start, end, touched } = followEdit(source, body, next);
+			source = { ...source, start, end, edited: source.edited || touched };
+		}
+		body = next;
 	}
 
-	function genEnd(outcome: Outcome) {
+	function outlineGenerated(result: Generated) {
+		genOpen = false;
+		if (result.append && source) appendOutline(source, result);
+		else newOutline(result);
+	}
+
+	/** Adds a new outline below whatever is already written. */
+	async function newOutline(r: Generated) {
+		const original = body;
+		body = body.trim() ? body.replace(/\s*$/, '') + '\n\n' : '';
+		const at = body.length;
+		const request =
+			r.level === 'guided' ? r.guided : { guided: r.guided, level: r.level, instructions: r.instructions };
+		// Stopping partway keeps what was written: there was nothing here to go back to.
+		const text = await writeInto(at, 0, `the ${levelInfo(r.level).label} outline`, request, true, (t) => t);
+		if (text === null) {
+			body = original;
+			genRetry = () => newOutline(r);
+			return;
+		}
+		source = { ...r, start: at, end: at + text.length, edited: false };
+	}
+
+	/** Rewrites the outline at another level, carrying over the teacher's edits if there are any. */
+	async function relevel(level: OutlineLevel) {
+		const s = source;
+		if (!s || generating) return;
+		rememberLevel(classId, level);
+		const current = body.slice(s.start, s.end);
+		// Guided is already written, unless the teacher's edits need folding into it.
+		const request =
+			level === 'guided' && !s.edited
+				? s.guided
+				: { guided: s.guided, current: s.edited ? current : '', level, instructions: s.instructions };
+		const text = await writeInto(s.start, s.end - s.start, `the ${levelInfo(level).label} outline`, request, false, (t) => t);
+		if (text === null) {
+			genRetry = () => relevel(level);
+			return;
+		}
+		source = { ...s, level, end: s.start + text.length, edited: false };
+	}
+
+	/** Adds the outline of later pages to the end of the outline, at its level. */
+	async function appendOutline(s: OutlineSource, r: Generated) {
+		const current = body.slice(s.start, s.end);
+		const fence = closingFence(current);
+		// Inside the outline block, or after the outline if the teacher took its fence out.
+		const at = s.start + (fence === -1 ? current.length : fence);
+		const lead = fence === -1 && current && !current.endsWith('\n') ? '\n' : '';
+		const request =
+			s.level === 'guided'
+				? r.guided
+				: { guided: s.guided, addition: r.guided, current, level: s.level, instructions: s.instructions };
+		const text = await writeInto(at, 0, 'the new pages', request, false, (t) => lead + asLines(t));
+		if (text === null) {
+			genRetry = () => {
+				if (source) appendOutline(source, r);
+			};
+			return;
+		}
+		source = {
+			...s,
+			guided: continueOutline(s.guided, r.guided),
+			instructions: [s.instructions, r.instructions].filter(Boolean).join('\n\n').slice(0, 2000),
+			end: s.end + text.length
+		};
+	}
+
+	/**
+	 * Puts an outline into the body in place of body[at, at + cut): `request` as
+	 * it is when it is text, or what /api/outline/relevel writes for it, streamed
+	 * in and passed through `shape` on the way. Returns what went in, or null when
+	 * the run failed or was stopped (unless `keepPartial`) and the body is back as
+	 * it was.
+	 */
+	async function writeInto(
+		at: number,
+		cut: number,
+		what: string,
+		request: string | Record<string, unknown>,
+		keepPartial: boolean,
+		shape: (text: string) => string
+	): Promise<string | null> {
+		const was = body;
+		const before = body.slice(0, at);
+		const after = body.slice(at + cut);
+		genProblem = '';
+		genRetry = null;
+		if (mode !== 'split') mode = 'split';
+
+		if (typeof request === 'string') {
+			const text = shape(request);
+			body = before + text + after;
+			return text;
+		}
+
+		generating = true;
+		genStatus = `Writing ${what}…`;
+		genController = new AbortController();
+		let streamed = '';
+		const { outcome, problem } = await streamOutline(
+			'/api/outline/relevel',
+			{
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ...request, class_name: klass?.name ?? '' }),
+				signal: genController.signal
+			},
+			{
+				text: (t) => {
+					streamed += t;
+					body = before + shape(streamed) + after;
+				}
+			}
+		);
 		generating = false;
-		if (outcome === 'error') body = beforeGen;
-		if (outcome === 'done') genOpen = false;
+		genStatus = '';
+		genController = undefined;
+
+		if (outcome === 'done' || (outcome === 'stopped' && keepPartial)) return shape(streamed);
+		body = was;
+		genProblem = problem;
+		return null;
 	}
 
 	function save() {
-		if (dirty && !saving) formEl?.requestSubmit();
+		if (dirty && !saving && !generating) formEl?.requestSubmit();
 	}
 
 	beforeNavigate((nav) => {
@@ -198,7 +341,7 @@
 	<div class="row-between">
 		<a class="btn btn-ghost btn-sm" href="/admin/curriculum?class={data.resource.class_id}">← Curriculum</a>
 		<div class="btn-row">
-			<button class="btn btn-sm" type="button" onclick={() => (genOpen = !genOpen)} aria-expanded={genOpen}>
+			<button class="btn btn-sm" type="button" onclick={() => (genOpen = !genOpen)} aria-expanded={genOpen} disabled={generating}>
 				Outline from textbook…
 			</button>
 			<a class="btn btn-sm" href="/admin/curriculum/{data.resource.id}/print?notes=0">Print handout</a>
@@ -217,11 +360,47 @@
 			resourceId={data.resource.id}
 			{classId}
 			className={klass?.name ?? ''}
-			onstart={genStart}
-			ontext={(t) => (body += t)}
-			onend={genEnd}
+			existing={source}
+			ongenerated={outlineGenerated}
 			onclose={() => (genOpen = false)}
 		/>
+	{/if}
+
+	{#if !genOpen && (source || generating || genProblem)}
+		<section class="card level-bar" aria-label="Outline level">
+			{#if source}
+				<span class="small" style="font-weight:600">Outline level</span>
+				<div class="seg" role="group" aria-label="Outline level">
+					{#each OUTLINE_LEVELS as l (l.id)}
+						<button
+							type="button"
+							aria-pressed={source.level === l.id}
+							title={l.hint}
+							onclick={() => relevel(l.id)}
+							disabled={generating || (source.level === l.id && source.end > source.start)}>{l.label}</button
+						>
+					{/each}
+				</div>
+			{/if}
+			{#if generating}
+				<span class="muted small" role="status"><span class="spinner"></span> {genStatus}</span>
+				<button class="btn btn-sm" type="button" onclick={() => genController?.abort()}>Stop</button>
+			{:else if source}
+				<span class="muted small">
+					Rewrites the generated outline from its Guided version — no rescanning{source.edited
+						? ', and your edits carry over'
+						: ''}.
+				</span>
+			{/if}
+			{#if genProblem}
+				<div class="alert alert-bad level-problem" role="alert">
+					{genProblem}
+					{#if genRetry}
+						<button class="btn btn-sm" type="button" onclick={genRetry}>Try again</button>
+					{/if}
+				</div>
+			{/if}
+		</section>
 	{/if}
 
 	<form
@@ -314,6 +493,7 @@
 		</div>
 
 		<div class="cur-editor mode-{mode}">
+			<input type="hidden" name="outline_source" value={source ? JSON.stringify(source) : ''} />
 			<!-- Kept mounted in Read mode (just hidden) so the form still submits the body. -->
 			<textarea
 				class="cur-source"
@@ -323,7 +503,7 @@
 				placeholder={'# Lecture title\n\nProse, lists and tables in Markdown. Math in $x^2$ or on its own lines:\n\n$$\n\\int_0^1 x\\,dx = \\tfrac12\n$$\n\n::: outline\n- Marked I. a. 1. by indent\n    - Tab to nest, Shift-Tab to outdent {{only I see this — hidden on handouts}}\n:::'}
 				bind:this={ta}
 				value={body}
-				oninput={(e) => (body = e.currentTarget.value)}
+				oninput={(e) => onBodyInput(e.currentTarget.value)}
 				onkeydown={onEditorKeydown}
 				readonly={generating}
 				hidden={mode === 'preview'}

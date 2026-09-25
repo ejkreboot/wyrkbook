@@ -728,6 +728,10 @@ tbody tr:hover { background: var(--paper-2); }
 .gen-panel { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .btn-capture[aria-disabled='true'] { opacity: .55; pointer-events: none; }
 
+/* Moves a generated outline between levels, from the Guided outline kept with it. */
+.level-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .6rem .9rem; }
+.level-bar .level-problem { flex-basis: 100%; margin: 0; }
+
 /* The drop zone for page photos, with the phone's QR code beside it. On a phone
    the tile is dropped: there the drop zone's own button opens the camera. */
 .gen-sources { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; align-items: stretch; }
@@ -759,6 +763,8 @@ tbody tr:hover { background: var(--paper-2); }
 }
 .seg button:last-child { border-right: 0; }
 .seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); }
+.seg button:disabled { cursor: default; }
+.seg button:disabled:not([aria-pressed='true']) { opacity: .5; }
 
 .cur-bar .cur-title { flex: 1 1 16rem; width: auto; font-family: var(--serif); font-weight: 600; }
 .cur-bar select { width: auto; flex: 0 1 auto; }

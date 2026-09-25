@@ -1,0 +1,23 @@
+-- wyrkbook: the Guided outline behind a generated outline
+--
+-- The outline generator reads the textbook photos once, at the most detailed
+-- (Guided) level, and derives the level the teacher picked from that text. The
+-- photos are discarded, so the Guided outline is the only record of the pages;
+-- keeping it lets the teacher move the outline to another level later, next week
+-- or next year, with a cheap text-only call instead of rescanning the book.
+--
+-- Shape (validated by the editor's save action, not the database):
+--
+--   {
+--     "guided":       "# Chapter 4…",   the Guided outline as the model wrote it
+--     "level":        "standard",       the level of the outline in `body` now
+--     "instructions": "Skip 3.4.",      the teacher's notes, reused on every relevel
+--     "start":        120,              where that outline sits in `body`: a
+--     "end":          4210,             [start, end) range of UTF-16 code units
+--     "edited":       false             whether the teacher has edited inside it
+--   }
+--
+-- Like `body`, it carries answers and is teacher-only: the table has no student
+-- policy (010_curriculum.sql).
+
+alter table curriculum_resource add column outline_source jsonb;
