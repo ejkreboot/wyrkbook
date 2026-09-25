@@ -528,7 +528,10 @@ tbody tr:hover { background: var(--paper-2); }
 /* ---------------------------------------------------------------- misc */
 
 .busy { display: inline-flex; align-items: center; gap: .45rem; color: var(--ink-3); font-size: .88rem; }
+/* inline-block, not the span's default inline: an inline box ignores width,
+   height and transform, so beside plain text it collapsed to a still dot. */
 .spinner {
+	display: inline-block; vertical-align: -.2em;
 	width: 15px; height: 15px; flex: none;
 	border: 2px solid var(--line-strong); border-top-color: var(--accent);
 	border-radius: 50%; animation: spin .7s linear infinite;

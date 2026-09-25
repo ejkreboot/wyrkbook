@@ -66,7 +66,7 @@
 
 <svelte:head><title>Pages · {data.title}</title></svelte:head>
 
-<section class="stack" style="max-width:32rem;margin:0 auto">
+<section class="wrap stack" style="max-width:32rem">
 	<div class="stack" style="gap:.2rem">
 		<h1 style="margin:0">Textbook pages</h1>
 		<p class="muted" style="margin:0">for <strong>{data.title}</strong></p>
@@ -78,8 +78,8 @@
 		for two hours.
 	</p>
 
-	<label class="btn btn-capture" for="phone-shot">
-		<span class="big">📷</span>
+	<label class="btn btn-primary shoot" for="phone-shot">
+		<span aria-hidden="true">📷</span>
 		<span>{shots.length ? 'Take the next page' : 'Take a photo'}</span>
 	</label>
 	<input id="phone-shot" class="sr-only" type="file" accept="image/*" capture="environment" onchange={onPick} />
@@ -109,3 +109,12 @@
 		{/each}
 	{/if}
 </section>
+
+<style>
+	/* The one thing to press on this page: a big, solid thumb target. */
+	.shoot {
+		width: 100%;
+		min-height: 3.5rem;
+		font-size: 1.1rem;
+	}
+</style>
