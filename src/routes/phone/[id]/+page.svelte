@@ -35,7 +35,8 @@
 			const small = await shrinkImage(shot.file, { maxBytes: MAX_BYTES });
 			const form = new FormData();
 			form.append('image', small);
-			const res = await fetch(`/api/outline/pages/${data.resource.id}`, { method: 'POST', body: form });
+			form.append('t', data.token);
+			const res = await fetch(`/phone/${data.resourceId}/upload`, { method: 'POST', body: form });
 			if (!res.ok) throw new Error(await reason(res));
 			shot.state = 'sent';
 		} catch (err) {
@@ -63,17 +64,18 @@
 	const sent = $derived(shots.filter((s) => s.state === 'sent').length);
 </script>
 
-<svelte:head><title>Pages · {data.resource.title}</title></svelte:head>
+<svelte:head><title>Pages · {data.title}</title></svelte:head>
 
 <section class="stack" style="max-width:32rem;margin:0 auto">
 	<div class="stack" style="gap:.2rem">
 		<h1 style="margin:0">Textbook pages</h1>
-		<p class="muted" style="margin:0">for <strong>{data.resource.title}</strong></p>
+		<p class="muted" style="margin:0">for <strong>{data.title}</strong></p>
 	</div>
 
 	<p class="muted small" style="margin:0">
 		Each photo appears on your computer as soon as it is sent. Take them in page order, straight
-		on, in good light. Keep the outline generator open there until you're done.
+		on, in good light. Keep the outline generator open there until you're done. This link works
+		for two hours.
 	</p>
 
 	<label class="btn btn-capture" for="phone-shot">

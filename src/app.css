@@ -725,16 +725,22 @@ tbody tr:hover { background: var(--paper-2); }
 .gen-panel { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .btn-capture[aria-disabled='true'] { opacity: .55; pointer-events: none; }
 
-/* Live camera for capturing pages on a computer (CameraCapture). */
-.cam-view {
-	position: relative; display: grid; place-items: center;
-	aspect-ratio: 4 / 3; max-height: 60vh; overflow: hidden;
-	background: #1c1814; border-radius: var(--radius-sm);
-	transition: filter .18s;
+/* The drop zone for page photos, with the phone's QR code beside it. On a phone
+   the tile is dropped: there the drop zone's own button opens the camera. */
+.gen-sources { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; align-items: stretch; }
+.gen-sources .btn-capture { height: 100%; }
+.btn-capture.dragging { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.phone-tile {
+	display: flex; flex-direction: column; align-items: center; gap: .3rem;
+	width: 10rem; padding: .6rem; text-align: center;
+	border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card);
 }
-.cam-view video { max-width: 100%; max-height: 100%; transition: transform .2s; }
-.cam-view.cam-flash { filter: brightness(1.8); }
-.cam-wait { position: absolute; color: #d8d0c4; }
+.phone-qr { width: 7.5rem; aspect-ratio: 1; padding: .35rem; background: #fff; border-radius: 4px; line-height: 0; }
+.phone-qr svg { width: 100%; height: 100%; }
+@media (max-width: 600px) {
+	.gen-sources { grid-template-columns: minmax(0, 1fr); }
+	.phone-tile { display: none; }
+}
 
 /* Segmented control: one pressed button out of a few. */
 .seg {

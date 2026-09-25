@@ -6,7 +6,10 @@
 	let { data, children } = $props();
 
 	const profile = $derived(data.profile);
-	const showChrome = $derived(!!profile && !page.url.pathname.endsWith('/print'));
+	// Print pages and the phone page for sending textbook photos stand alone.
+	const showChrome = $derived(
+		!!profile && !page.url.pathname.endsWith('/print') && !page.url.pathname.startsWith('/phone/')
+	);
 
 	const links = $derived.by(() => {
 		if (!profile) return [];

@@ -1,6 +1,4 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import QRCode from 'qrcode';
-import { PUBLIC_SITE_URL } from '$env/static/public';
 import { addWeeks, weekStart } from '$lib/week';
 import type { CurriculumResource } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
@@ -8,7 +6,7 @@ import type { Actions, PageServerLoad } from './$types';
 /** Generous for lecture notes; it only exists so a paste accident cannot store megabytes. */
 const MAX_BODY = 200_000;
 
-export const load: PageServerLoad = async ({ locals, params, url }) => {
+export const load: PageServerLoad = async ({ locals, params }) => {
 	const { data: resource } = await locals.supabase
 		.from('curriculum_resource')
 		.select('*')
@@ -22,20 +20,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const base = resource.week_start ?? weekStart();
 	const weekOptions = Array.from({ length: 53 }, (_, i) => addWeeks(base, i - 12));
 
-	/*
-	 * For photographing pages with a phone: the QR opens the phone page for this
-	 * resource, and the desktop listens on the Realtime topic the upload route
-	 * announces into (migration 011).
-	 */
-	const origin = PUBLIC_SITE_URL?.replace(/\/$/, '') || url.origin;
-	const phoneUrl = `${origin}/admin/curriculum/${resource.id}/phone`;
-	const phone = {
-		url: phoneUrl,
-		qr: await QRCode.toString(phoneUrl, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' }),
-		topic: `outline-pages:${locals.profile!.id}:${resource.id}`
-	};
-
-	return { resource: resource as CurriculumResource, weekOptions, phone };
+	return { resource: resource as CurriculumResource, weekOptions };
 };
 
 export const actions: Actions = {

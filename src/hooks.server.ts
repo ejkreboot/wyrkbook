@@ -41,7 +41,12 @@ const supabase: Handle = async ({ event, resolve }) => {
 	});
 };
 
-const PUBLIC_ROUTES = ['/login', '/auth', '/logout'];
+/**
+ * `/phone` is the page a teacher's phone opens from the outline generator's QR.
+ * It is not signed in; each request carries a short-lived signed link instead,
+ * checked in $lib/server/outlinePages.
+ */
+const PUBLIC_ROUTES = ['/login', '/auth', '/logout', '/phone'];
 
 const guard: Handle = async ({ event, resolve }) => {
 	const user = await event.locals.getVerifiedUser();

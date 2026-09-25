@@ -215,7 +215,6 @@
 	{#if genOpen}
 		<OutlineGenerator
 			resourceId={data.resource.id}
-			phone={data.phone}
 			{classId}
 			className={klass?.name ?? ''}
 			onstart={genStart}

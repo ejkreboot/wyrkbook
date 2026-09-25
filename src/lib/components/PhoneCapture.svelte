@@ -4,37 +4,32 @@
 	import { supabaseBrowser } from '$lib/supabaseBrowser';
 
 	/**
-	 * Photos taken on a phone, arriving here as they are sent.
+	 * A QR code for sending pages from a phone, and the pages as they arrive.
 	 *
 	 * The desktop browser cannot always see an iPhone as a camera (Chrome does
-	 * not list Continuity Camera), so this shows a QR code for the phone page
-	 * instead. Each upload is announced on a private Realtime channel; this pulls
-	 * the page through the app, hands it over like a picked file, and deletes it
-	 * from storage. Whatever is still waiting when this closes — panel shut,
-	 * outline started, page left or tab closed — is deleted too. See migration 011.
+	 * not list Continuity Camera), so the phone takes the photos in its own
+	 * browser instead. The code opens /phone/<id> with a signed link that expires
+	 * after two hours; a fresh one is fetched every half hour so the code on screen
+	 * is never stale. Each upload is announced on a private Realtime channel; this
+	 * pulls the page through the app, hands it over like a picked file, and deletes
+	 * it from storage. The folder is emptied when this starts listening and again
+	 * when it stops — outline started, generator closed, page left or tab closed.
+	 * See migration 011.
 	 */
 	let {
 		resourceId,
-		url,
-		qr,
-		topic,
 		remaining,
-		oncapture,
-		onclose
+		oncapture
 	}: {
 		resourceId: string;
-		/** The phone page, spelled out under the QR for anyone who would rather type it. */
-		url: string;
-		/** An SVG string, made on the server from `url`. */
-		qr: string;
-		/** `outline-pages:<teacher uid>:<resource id>`. */
-		topic: string;
 		/** Pages still allowed; later arrivals are discarded at zero. */
 		remaining: number;
 		oncapture: (file: File) => void | Promise<void>;
-		onclose: () => void;
 	} = $props();
 
+	const REFRESH_MS = 30 * 60 * 1000;
+
+	let qr = $state('');
 	let live = $state<'connecting' | 'ready' | 'offline'>('connecting');
 	let received = $state(0);
 	let problem = $state('');
@@ -85,9 +80,21 @@
 		}
 	}
 
+	async function refreshLink(): Promise<string | undefined> {
+		try {
+			const res = await fetch(`${base}/link`);
+			if (!res.ok) throw new Error();
+			const link = (await res.json()) as { qr: string; topic: string };
+			qr = link.qr;
+			return link.topic;
+		} catch {
+			problem = 'The phone code could not be made. Reload the page to try again.';
+		}
+	}
+
 	/** `keepalive` lets the request outlive the page when the tab is closing. */
 	function clearWaiting() {
-		fetch(base, { method: 'DELETE', keepalive: true }).catch(() => {
+		return fetch(base, { method: 'DELETE', keepalive: true }).catch(() => {
 			// Pruned server-side after an hour regardless.
 		});
 	}
@@ -95,8 +102,14 @@
 	onMount(() => {
 		const sb = supabaseBrowser();
 		let channel: RealtimeChannel | undefined;
+		const timer = setInterval(refreshLink, REFRESH_MS);
 
 		(async () => {
+			// Whatever is waiting is from an earlier session, not this one. Cleared
+			// before the code is shown, so it cannot catch this session's first page.
+			await clearWaiting();
+			const topic = await refreshLink();
+			if (!topic || closed) return;
 			// Private channels are authorised by the teacher's JWT, read from the session cookie.
 			await sb.realtime.setAuth();
 			if (closed) return;
@@ -119,6 +132,7 @@
 		window.addEventListener('pagehide', clearWaiting);
 		return () => {
 			closed = true;
+			clearInterval(timer);
 			window.removeEventListener('pagehide', clearWaiting);
 			if (channel) sb.removeChannel(channel);
 			clearWaiting();
@@ -126,52 +140,26 @@
 	});
 </script>
 
-<div class="stack phone" role="group" aria-label="Phone">
-	<div class="row" style="gap:1rem;align-items:flex-start;flex-wrap:wrap">
-		<div class="phone-qr" aria-hidden="true">{@html qr}</div>
-		<div class="stack" style="gap:.4rem;flex:1 1 14rem">
-			<strong>Scan with your phone's camera</strong>
-			<span class="muted small">
-				It opens a page for taking photos of this resource's textbook pages. Sign in there if asked,
-				with this same account. Each photo shows up here as soon as it's sent.
-			</span>
-			<span class="muted small" style="word-break:break-all">{url}</span>
-		</div>
+<div class="phone-tile" role="group" aria-label="Send pages from your phone">
+	<div class="phone-qr" aria-hidden="true">
+		{#if qr}{@html qr}{/if}
 	</div>
-
-	<div class="row" style="gap:.6rem;align-items:center;flex-wrap:wrap">
-		<span class="small" role="status">
-			{#if live === 'connecting'}
-				<span class="spinner"></span> Connecting…
-			{:else if live === 'offline'}
-				Live updates aren't connecting.
-			{:else if received}
-				{received} page{received === 1 ? '' : 's'} received. Waiting for more…
-			{:else}
-				Waiting for photos…
-			{/if}
-		</span>
-		{#if live === 'offline'}
-			<button class="btn btn-sm" type="button" onclick={catchUp}>Check for photos</button>
+	<span class="small" style="font-weight:600">Or scan with your phone</span>
+	<span class="muted small" role="status">
+		{#if live === 'connecting'}
+			Connecting…
+		{:else if live === 'offline'}
+			Not connected.
+		{:else if received}
+			{received} received
+		{:else}
+			Photos appear here
 		{/if}
-		<button class="btn btn-ghost btn-sm" type="button" onclick={onclose}>Done</button>
-	</div>
-
+	</span>
+	{#if live === 'offline'}
+		<button class="btn btn-sm" type="button" onclick={catchUp}>Check for photos</button>
+	{/if}
 	{#if problem}
-		<div class="alert alert-bad" role="alert">{problem}</div>
+		<span class="small" style="color:var(--bad)" role="alert">{problem}</span>
 	{/if}
 </div>
-
-<style>
-	.phone-qr {
-		width: 9rem;
-		padding: 0.5rem;
-		background: #fff;
-		border-radius: 6px;
-		line-height: 0;
-	}
-	.phone-qr :global(svg) {
-		width: 100%;
-		height: auto;
-	}
-</style>

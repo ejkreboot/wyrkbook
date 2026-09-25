@@ -5,9 +5,10 @@
 -- code instead. The phone opens a page that uploads each photo here, and the
 -- desktop editor pulls them down and deletes them — the same moment it would
 -- otherwise have read them from a file picker. Nothing is meant to stay: the
--- desktop removes each page as it takes it and empties the folder when it stops
--- listening (panel closed, outline generated, page left or closed). Anything a
--- crashed tab strands is pruned after an hour, the next time the folder is read.
+-- desktop removes each page as it takes it, and empties the folder when it starts
+-- and stops listening (generator opened or closed, outline generated, page left
+-- or tab closed). Anything a crashed tab strands is pruned after an hour, the next
+-- time the folder is read.
 --
 -- Path convention: <org_id>/<teacher uid>/<curriculum_resource id>/<ms>-<rand>.jpg.
 -- The uid segment keeps two teachers editing one resource from feeding each
@@ -37,28 +38,26 @@ create policy outline_pages_own on storage.objects
 /*
  * The desktop hears about each new page on a private Realtime broadcast channel,
  * `outline-pages:<teacher uid>:<resource id>`, rather than by polling storage.
- * The server calls this right after an upload. The topic is built from
- * auth.uid() here, not passed in, so a teacher can only ever announce into their
- * own channel. The payload is just the file name; the photo itself is fetched
- * through the app, under the storage policy above.
+ * The phone is not signed in — it holds a short-lived signed link instead — so
+ * the upload is written, and announced, by the server's service-role client after
+ * it has checked that link. Only that role may call this. The payload is just the
+ * file name; the desktop fetches the photo itself through the app, under the
+ * storage policy above.
  */
-create or replace function wb_outline_page_ready(p_resource uuid, p_name text) returns void
+create or replace function wb_outline_page_ready(p_teacher uuid, p_resource uuid, p_name text) returns void
 	language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-	if not wb_is_admin() then
-		raise exception 'not allowed' using errcode = '42501';
-	end if;
 	perform realtime.send(
 		jsonb_build_object('name', p_name),
 		'page',
-		'outline-pages:' || auth.uid()::text || ':' || p_resource::text,
+		'outline-pages:' || p_teacher::text || ':' || p_resource::text,
 		true
 	);
 end;
 $$;
 
-revoke execute on function wb_outline_page_ready(uuid, text) from public;
-grant  execute on function wb_outline_page_ready(uuid, text) to authenticated;
+revoke execute on function wb_outline_page_ready(uuid, uuid, text) from public, anon, authenticated;
+grant  execute on function wb_outline_page_ready(uuid, uuid, text) to service_role;
 
 -- Listening only, and only on your own channels. No insert policy: browsers
 -- never broadcast here, only the function above does.

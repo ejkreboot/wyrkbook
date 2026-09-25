@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import CameraCapture from '$lib/components/CameraCapture.svelte';
 	import PhoneCapture from '$lib/components/PhoneCapture.svelte';
 	import { shrinkImage, UPLOAD_BUDGET } from '$lib/shrinkImage';
 	import {
@@ -16,7 +15,6 @@
 		resourceId,
 		classId,
 		className,
-		phone,
 		onstart,
 		ontext,
 		onend,
@@ -25,8 +23,6 @@
 		resourceId: string;
 		classId: string;
 		className: string;
-		/** The QR and Realtime topic for sending pages from a phone. */
-		phone: { url: string; qr: string; topic: string };
 		/** The first byte of the outline is about to arrive. */
 		onstart: () => void;
 		ontext: (text: string) => void;
@@ -45,8 +41,7 @@
 	let status = $state('');
 	let problem = $state('');
 	let controller = $state.raw<AbortController>();
-	let camera = $state(false);
-	let phoneOpen = $state(false);
+	let dragging = $state(false);
 
 	// Sparseness is remembered per class: it moves with the term, one class at a time.
 	const levelKey = $derived(`wyrkbook:outline-level:${classId}`);
@@ -69,10 +64,21 @@
 
 	const levelHint = $derived(OUTLINE_LEVELS.find((l) => l.id === level)?.hint ?? '');
 
-	async function onPick(e: Event) {
+	function onPick(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const picked = Array.from(input.files ?? []);
 		input.value = '';
+		addFiles(picked);
+	}
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		dragging = false;
+		if (busy) return;
+		addFiles(Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/')));
+	}
+
+	async function addFiles(picked: File[]) {
 		problem = '';
 		const room = MAX_PAGES - pages.length;
 		if (picked.length > room) problem = `Up to ${MAX_PAGES} pages at a time — the rest were left out.`;
@@ -110,9 +116,6 @@
 
 	async function generate() {
 		if (!pages.length || busy) return;
-		camera = false;
-		// Closing it also clears anything the phone is still sending.
-		phoneOpen = false;
 		busy = true;
 		problem = '';
 		status = 'Preparing photos…';
@@ -227,31 +230,29 @@
 	{/if}
 
 	{#if pages.length < MAX_PAGES}
-		<label class="btn btn-capture" for="gen-shot" aria-disabled={busy}>
-			<span class="big">📷</span>
-			<span>{pages.length ? 'Add another page' : 'Take or choose photos'}</span>
-			<span class="hint">Up to {MAX_PAGES} pages</span>
-		</label>
-		<input id="gen-shot" class="sr-only" type="file" accept="image/*" capture="environment" multiple onchange={onPick} disabled={busy} />
-	{/if}
-
-	{#if camera}
-		<CameraCapture remaining={MAX_PAGES - pages.length} oncapture={addPage} onclose={() => (camera = false)} />
-	{:else if phoneOpen}
-		<PhoneCapture
-			{resourceId}
-			{...phone}
-			remaining={MAX_PAGES - pages.length}
-			oncapture={addPage}
-			onclose={() => (phoneOpen = false)}
-		/>
-	{:else if pages.length < MAX_PAGES && !busy}
-		<div class="row" style="gap:.5rem;flex-wrap:wrap">
-			<button class="btn btn-sm" type="button" onclick={() => (phoneOpen = true)}>Use your phone…</button>
-			<button class="btn btn-sm" type="button" onclick={() => (camera = true)}>
-				Use a camera on this computer…
-			</button>
+		<div class="gen-sources">
+			<label
+				class="btn btn-capture"
+				class:dragging
+				for="gen-shot"
+				aria-disabled={busy}
+				ondragover={(e) => {
+					e.preventDefault();
+					dragging = true;
+				}}
+				ondragleave={() => (dragging = false)}
+				ondrop={onDrop}
+			>
+				<span class="big">📷</span>
+				<span>{pages.length ? 'Add more pages' : 'Drop photos of the pages here'}</span>
+				<span class="hint">or click to choose · up to {MAX_PAGES} pages</span>
+			</label>
+			<!-- Unmounting it (while generating) clears anything the phone is still sending. -->
+			{#if !busy}
+				<PhoneCapture {resourceId} remaining={MAX_PAGES - pages.length} oncapture={addPage} />
+			{/if}
 		</div>
+		<input id="gen-shot" class="sr-only" type="file" accept="image/*" capture="environment" multiple onchange={onPick} disabled={busy} />
 	{/if}
 
 	<div class="stack" style="gap:.4rem">
