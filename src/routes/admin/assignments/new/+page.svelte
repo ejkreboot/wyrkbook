@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { weekLabel, addWeeks } from '$lib/week';
+	import { shrinkImage, UPLOAD_BUDGET } from '$lib/shrinkImage';
 
 	let { data, form } = $props();
 
@@ -46,8 +47,11 @@
 		busy = true;
 		apiError = '';
 		try {
+			// Phone photos are resized first: raw, a few of them outgrow Vercel's
+			// 4.5 MB request limit, and one alone can pass the API's 5 MB per image.
+			const perPage = Math.floor(UPLOAD_BUDGET / files.length);
 			const body = new FormData();
-			for (const f of files) body.append('images', f);
+			for (const f of files) body.append('images', await shrinkImage(f, { maxBytes: perPage }));
 
 			const res = await fetch('/api/extract', { method: 'POST', body });
 			if (!res.ok) {
@@ -60,8 +64,11 @@
 			instructions = result.instructions ?? '';
 			problems = result.problems ?? [];
 			extracted = true;
-		} catch {
-			apiError = 'The request failed. Check your connection and try again.';
+		} catch (e) {
+			apiError =
+				e instanceof TypeError
+					? 'The request failed. Check your connection and try again.'
+					: ((e as Error)?.message ?? 'The request failed.');
 		} finally {
 			busy = false;
 		}

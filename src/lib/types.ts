@@ -223,3 +223,20 @@ export type PlanImport = {
  */
 export type ProblemAnswer = { problem_id: string; org_id: string; answer: string | null };
 export type AssignmentKey = { assignment_id: string; org_id: string; answer_key: string | null };
+
+/**
+ * A piece of lecture material for a class, written in Markdown with KaTeX math.
+ * Teacher-only notes are `{{double braces}}` inside `body`; see $lib/markdown and
+ * migration 010.
+ */
+export type CurriculumResource = {
+	id: string;
+	org_id: string;
+	class_id: string;
+	title: string;
+	body: string;
+	week_start: string | null;
+	created_by: string | null;
+	created_at: string;
+	updated_at: string;
+};

@@ -39,6 +39,10 @@
 	--c-violet: #6b4a94;
 	--c-brown:  #7a5439;
 
+	/* Teacher notes in curriculum resources: a cool blue, so they never read as
+	   part of the terracotta-and-paper lecture around them. */
+	--note:      #2f5f8f;
+
 	--radius:    10px;
 	--radius-sm: 6px;
 	--shadow:    0 1px 2px rgba(36, 31, 26, .06), 0 4px 14px rgba(36, 31, 26, .05);
@@ -95,6 +99,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 1.25rem 0; }
 
 .wrap { width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 1rem; }
 .wrap-narrow { max-width: 640px; }
+.wrap-wide   { max-width: 1400px; }
 
 main { flex: 1; padding: 1.25rem 0 5rem; }
 
@@ -491,6 +496,18 @@ tbody tr:hover { background: var(--paper-2); }
 	border: 1px solid var(--line-strong); background: var(--paper-2);
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.thumb .thumb-n {
+	position: absolute; left: 4px; bottom: 4px;
+	min-width: 20px; padding: 0 5px; border-radius: 10px;
+	background: rgba(36,31,26,.72); color: #fff;
+	font-size: .72rem; font-weight: 700; line-height: 20px; text-align: center;
+}
+.thumb .thumb-move {
+	position: absolute; top: 3px; left: 3px;
+	width: 26px; height: 26px; border-radius: 50%;
+	border: 0; background: rgba(36,31,26,.72); color: #fff;
+	font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
 .thumb .thumb-x {
 	position: absolute; top: 3px; right: 3px;
 	width: 26px; height: 26px; border-radius: 50%;
@@ -702,6 +719,120 @@ tbody tr:hover { background: var(--paper-2); }
 
 .gb-item-x { color: var(--bad); }
 
+/* ---------------------------------------------------------------- curriculum */
+
+/* Outline generator: the panel above the editor. */
+.gen-panel { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.btn-capture[aria-disabled='true'] { opacity: .55; pointer-events: none; }
+
+/* Live camera for capturing pages on a computer (CameraCapture). */
+.cam-view {
+	position: relative; display: grid; place-items: center;
+	aspect-ratio: 4 / 3; max-height: 60vh; overflow: hidden;
+	background: #1c1814; border-radius: var(--radius-sm);
+	transition: filter .18s;
+}
+.cam-view video { max-width: 100%; max-height: 100%; transition: transform .2s; }
+.cam-view.cam-flash { filter: brightness(1.8); }
+.cam-wait { position: absolute; color: #d8d0c4; }
+
+/* Segmented control: one pressed button out of a few. */
+.seg {
+	display: inline-flex;
+	border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+	overflow: hidden; background: var(--card);
+}
+.seg button {
+	font: inherit; font-size: .82rem; font-weight: 600;
+	min-height: 34px; padding: .3rem .8rem;
+	border: 0; border-right: 1px solid var(--line); background: transparent;
+	color: var(--ink-2); cursor: pointer;
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); }
+
+.cur-bar .cur-title { flex: 1 1 16rem; width: auto; font-family: var(--serif); font-weight: 600; }
+.cur-bar select { width: auto; flex: 0 1 auto; }
+
+.cur-toolbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.cur-format { display: flex; gap: .25rem; flex-wrap: wrap; }
+.cur-format .btn { min-width: 34px; font-family: var(--mono); }
+.cur-note-btn { color: var(--note); border-color: color-mix(in srgb, var(--note) 35%, white); }
+.cur-notes-toggle { margin-left: auto; align-items: center; color: var(--note); font-weight: 600; }
+
+.cur-editor { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.cur-source {
+	font-family: var(--mono); font-size: .92rem; line-height: 1.55;
+	tab-size: 4;
+	min-height: 70vh;
+}
+@media (min-width: 1040px) {
+	.cur-editor.mode-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+	/* Side by side, both panes scroll on their own under the sticky save bar. */
+	.cur-editor.mode-split .cur-source,
+	.cur-editor.mode-split .cur-preview {
+		height: calc(100dvh - 220px); min-height: 420px;
+		resize: none; overflow: auto;
+	}
+}
+.cur-preview { padding: 1.25rem 1.5rem; }
+
+/* Rendered Markdown. Fixed-width by request — lecture notes are read the way
+   they were typed. KaTeX brings its own fonts, so the math is unaffected. */
+.md { font-family: var(--mono); font-size: .92rem; line-height: 1.6; overflow-wrap: break-word; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md h1, .md h2, .md h3, .md h4 { font-family: var(--mono); line-height: 1.3; margin: 1.4em 0 .5em; }
+.md h1 { font-size: 1.45rem; }
+.md h2 { font-size: 1.2rem; border-bottom: 1px solid var(--line); padding-bottom: .2em; }
+.md h3 { font-size: 1.05rem; }
+.md h4 { font-size: .95rem; color: var(--ink-2); }
+.md p, .md ul, .md ol, .md blockquote, .md pre, .md table { margin: 0 0 .9em; }
+.md ul, .md ol { padding-left: 1.6em; }
+.md li + li { margin-top: .2em; }
+.md blockquote { border-left: 3px solid var(--line-strong); padding-left: .9em; color: var(--ink-2); }
+.md code { background: var(--paper-2); padding: .1em .3em; border-radius: 4px; font-size: .95em; }
+.md pre { background: var(--paper-2); padding: .8em 1em; border-radius: var(--radius-sm); overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
+.md table { width: auto; font-size: inherit; }
+.md th { text-transform: none; letter-spacing: 0; font-size: inherit; color: var(--ink); }
+.md th, .md td { border: 1px solid var(--line); }
+.md img { max-width: 100%; }
+.md .math-block { overflow-x: auto; overflow-y: hidden; margin: 0 0 .9em; }
+.md .katex-display { margin: .4em 0; }
+.md .math-error { color: var(--bad); }
+
+.md .teacher-note { color: var(--note); font-weight: 400; }
+/* A list item that is only a note: blue marker too, since the handout drops it. */
+.md li.note-item { font-weight: 400; }
+.md li.note-item::marker { color: var(--note); }
+
+/* Blanks. `[[answer]]` is a fill-in line, `[[n: answer]]` n lines of writing
+   space. The handout gets them empty; the teacher copy writes the answer in, in
+   blue. Same size either way, so both copies paginate alike. */
+.md .blank {
+	display: inline-block; min-width: 15ch; padding: 0 .4ch;
+	border-bottom: 1px solid var(--ink); line-height: 1.25;
+	color: var(--note); font-weight: 400; text-align: center;
+}
+.md .write {
+	display: block; min-height: calc(var(--lines, 2) * 1.9em);
+	padding: .25em 0 0 1ch;
+	color: var(--note); font-weight: 400;
+}
+
+/* Outlines: the teacher types plain nested lists inside `::: outline`, usually
+   with `-`, and the marker follows depth alone — I. → a. → 1. → –. `-` and `1.`
+   items look the same here. The top level is bold, its sub-points are not. */
+.md .outline :is(ol, ul)                                     { list-style-type: upper-roman; padding-left: 2.8em; }
+.md .outline :is(ol, ul) :is(ol, ul)                         { list-style-type: lower-alpha; padding-left: 1.8em; }
+.md .outline :is(ol, ul) :is(ol, ul) :is(ol, ul)             { list-style-type: decimal; }
+.md .outline :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) { list-style-type: '– '; }
+.md .outline li > :is(ol, ul) { margin: .2em 0 0; }
+.md .outline > :is(ol, ul) > li { font-weight: 700; }
+.md .outline > :is(ol, ul) > li > :is(ol, ul, :not(:first-child)) { font-weight: 400; }
+
 /* ============================================================================
    PRINT — the assignment sheet.
    Page 1+ hold the problems; a run of blank ruled pages follows so the student
@@ -790,4 +921,13 @@ tbody tr:hover { background: var(--paper-2); }
 			#c9d4e4 8.2mm, #c9d4e4 8.4mm
 		);
 	}
+
+	/* --- curriculum handouts --- */
+	.md { font-size: 10.5pt; }
+	.md h1, .md h2, .md h3 { break-after: avoid; page-break-after: avoid; }
+	.md .math-block, .md table, .md pre { break-inside: avoid; page-break-inside: avoid; }
+	/* A prompt and the space to answer it stay on one page. */
+	.md li:has(> .write), .md p:has(> .write) { break-inside: avoid; page-break-inside: avoid; }
+	/* A teacher copy should print its notes in color, not wash them out. */
+	.teacher-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

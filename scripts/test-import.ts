@@ -22,7 +22,7 @@ import { weekLabel, weekStart } from '../src/lib/week.ts';
  * Overridable so the same document can be run past a cheaper model:
  *   MODEL=claude-haiku-4-5 npm run test:import -- <file> "<guidance>"
  */
-const MODEL = process.env.MODEL ?? 'claude-opus-5';
+const MODEL = process.env.MODEL ?? 'claude-opus-5-5';
 
 // Haiku 4.5 predates adaptive thinking and rejects `effort` outright, so the
 // request shape has to bend for it.

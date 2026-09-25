@@ -18,6 +18,7 @@
 				{ href: '/admin', label: 'This week' },
 				{ href: '/admin/calendar', label: 'Calendar' },
 				{ href: '/admin/plan', label: 'Plan' },
+				{ href: '/admin/curriculum', label: 'Curriculum' },
 				{ href: '/admin/assignments', label: 'Assignments' },
 				{ href: '/admin/gradebook', label: 'Grades' },
 				{ href: '/admin/classes', label: 'Classes' },

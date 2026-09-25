@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
-export const MODEL = 'claude-opus-5';
+export const MODEL = 'claude-opus-5-5';
 
 let client: Anthropic | null = null;
 

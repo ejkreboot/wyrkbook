@@ -88,6 +88,7 @@ src/
   hooks.server.ts             Supabase SSR client + role guard
   lib/
     week.ts                   Monday normalization, week/month labels
+    markdown.ts               curriculum Markdown: KaTeX math, teacher notes
     types.ts                  row types
     server/
       anthropic.ts            lazy API client
@@ -102,7 +103,8 @@ src/
   routes/
     login/                    two-step email OTP
     sysadmin/                 organizations and admins
-    admin/                    this week, calendar, classes, students, assignments
+    admin/                    this week, calendar, classes, students, assignments,
+                              curriculum
     student/                  available work, work session, results
     s/[id]/                   QR target — opens or resumes a work session
     api/{extract,hint,grade,plan-import}/
@@ -118,6 +120,74 @@ by the print stylesheet. Page size is US Letter. Ruled work pages are generated
 with a repeating CSS gradient at 8.4mm spacing, with a red left margin rule at
 20mm — that margin is what the grader reads to attribute work to a problem.
 The number of work pages is per-assignment (`work_pages`).
+
+## Curriculum
+
+`/admin/curriculum` holds each class's lecture material — notes, outlines,
+worked examples — one Markdown document per resource. A resource belongs to a
+class and, optionally, a week. Teachers only; students have no policy on the
+table at all (migration 010).
+
+The editor is plain Markdown source with a live preview beside it (Write /
+Split / Read). Rendered text is fixed-width. Math is KaTeX: `$x^2$` inline,
+`$$ … $$` for display. A `$` that opens on a space or closes before a digit is
+left as prose, so prices survive, and `\$` is always a literal dollar.
+
+Teacher notes go in `{{double braces}}` anywhere text can — mid-sentence, in a
+heading, or as a whole outline item — and render in place in blue:
+
+```
+- Limits {{ask them to guess the sign first}}
+    - Intuition
+    - {{Pause here and draw the graph}}
+```
+
+The Read view toggles them on and off. `/admin/curriculum/<id>/print` prints a
+handout by default, and a handout is rendered with the notes removed from the
+token stream, not hidden with CSS — they are not in the page source at all. A
+paragraph or list item that was only a note is dropped with it, so a handout
+outline has no empty item or gap in its numbering (the teacher copy shows such
+items with a blue marker). `?notes=1` prints the teacher copy.
+`npm run test:markdown` checks the renderer, including that stripping.
+
+Outlines are ordinary nested dash lists inside an `outline` block. The source
+stays plain Markdown; CSS marks each depth I. → a. → 1. → –, with the top level
+in bold (`1.` items work too and look the same). In the editor, Tab and
+Shift-Tab indent and outdent the selected lines (Esc, then Tab, moves focus out
+of the editor).
+
+```
+::: outline
+- Limits
+    - Intuition
+        - Approaching from the left
+            - sketch it on the board
+- Continuity
+:::
+```
+
+Blanks hold their answer in double brackets. `[[system]]` is a fill-in line;
+`[[2: values that satisfy every equation]]` is two lines of writing space. The
+handout gets them empty, the teacher copy has the answer written in, in blue —
+and like notes, the answers are left out of the handout's page source entirely.
+
+#### Outlines from textbook pages
+
+**Outline from textbook…** in the editor takes photos of textbook pages and
+streams a lecture outline into the body, in the conventions above, from
+`POST /api/outline`. The photos are resized in the browser (Vercel caps a
+request at 4.5 MB, the API an image at 5 MB), sent to Claude, and discarded:
+they are never written to storage or the database. A sparseness setting —
+Guided, Standard, Sparse, Skeletal — is remembered per class in the browser,
+so it can be stepped down as the term goes on. On a computer, **Use a camera on
+this computer…** opens a live view (`getUserMedia`) that captures pages as
+stills — any webcam, or on a Mac a nearby iPhone through Continuity Camera.
+
+The prompt is `src/lib/server/outlinePrompt.ts`; the teacher-written reference
+outline it imitates is `src/lib/server/outline-example.md`, and editing that
+file is the most direct way to change the house style. `npm run test:outline
+-- standard p1.jpg p2.jpg` runs real photos through the same prompt and prints
+the Markdown; it costs an API call.
 
 ## Planning a term
 
@@ -231,6 +301,8 @@ correct — every quiz, every lab, and the break weeks in the right places:
 | Opus 5 | 87s | 9,633 | $0.30 |
 | Sonnet 5 | 117s | 16,040 | $0.28 |
 | Haiku 4.5 | 117s | 19,902 | $0.11 |
+
+(Measured before the move to Opus 5.5, which every AI route now uses.)
 
 There is no cheaper-and-faster option: output tokens dominate both latency and
 cost, and Opus is simply terser — it writes `Section 8.4: Unit Conversions;

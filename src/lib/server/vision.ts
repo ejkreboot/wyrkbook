@@ -10,9 +10,9 @@ const MAX_IMAGES = 8;
  * HEIC is rejected rather than silently mangled — phones can be told to shoot
  * JPEG, and a wrong media_type produces confusing model errors downstream.
  */
-export async function filesToImageParts(files: File[]): Promise<ImagePart[]> {
+export async function filesToImageParts(files: File[], max = MAX_IMAGES): Promise<ImagePart[]> {
 	if (!files.length) error(400, 'Attach at least one photo.');
-	if (files.length > MAX_IMAGES) error(400, `Attach at most ${MAX_IMAGES} photos at a time.`);
+	if (files.length > max) error(400, `Attach at most ${max} photos at a time.`);
 
 	const parts: ImagePart[] = [];
 	for (const file of files) {
