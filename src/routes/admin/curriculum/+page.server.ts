@@ -19,7 +19,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-	/** Creates an empty resource and opens it in the editor. */
+	/** Creates an empty resource and opens it in the editor — at the Word importer with `import`. */
 	create: async ({ request, locals }) => {
 		const form = await request.formData();
 		const title = String(form.get('title') ?? '').trim();
@@ -40,6 +40,6 @@ export const actions: Actions = {
 			.single();
 
 		if (error || !data) return fail(400, { message: error?.message ?? 'Could not create it.' });
-		redirect(303, `/admin/curriculum/${data.id}`);
+		redirect(303, `/admin/curriculum/${data.id}${form.get('import') ? '?import' : ''}`);
 	}
 };

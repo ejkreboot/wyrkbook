@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ProblemText from '$lib/components/ProblemText.svelte';
+
 	let { data, form } = $props();
 
 	const s = $derived(data.submission);
@@ -69,7 +71,7 @@
 					<li class="problem" style="border-left:3px solid {r.correct ? 'var(--ok)' : 'var(--bad)'}">
 						<div class="problem-label">{r.problem?.label}</div>
 						<div class="problem-body">
-							<div class="small">{r.problem?.body}</div>
+							<ProblemText body={r.problem?.body ?? ''} class="small" />
 							{#if r.problem?.answer}
 								<div class="answer-line"><strong>Key:</strong> {r.problem.answer}</div>
 							{/if}

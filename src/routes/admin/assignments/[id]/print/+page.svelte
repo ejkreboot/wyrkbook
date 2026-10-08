@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { weekLabel } from '$lib/week';
+	import ProblemText from '$lib/components/ProblemText.svelte';
 
 	let { data } = $props();
 
@@ -53,10 +54,13 @@
 	{/if}
 
 	<ol class="print-problems">
-		{#each data.problems as p (p.id)}
+		{#each data.problems as p, i (p.id)}
+			{#if p.section && p.section !== data.problems[i - 1]?.section}
+				<li class="psection">{p.section}</li>
+			{/if}
 			<li>
 				<span class="plabel">{p.label}.</span>
-				<span class="pbody">{p.body}</span>
+				<ProblemText body={p.body} class="pbody" />
 			</li>
 		{/each}
 	</ol>

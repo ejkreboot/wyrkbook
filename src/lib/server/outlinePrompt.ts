@@ -25,6 +25,13 @@ const LEVEL_TEXT: Record<OutlineLevel, string> = {
 	skeletal: `Skeletal — students take their own notes. Give only the sections and subsections, each with generous writing space (four to six lines). No fill-in blanks and no third level.`
 };
 
+/**
+ * How blanks and writing space are written — shared with the Word importer
+ * ($lib/server/importPrompt) so both write the same markup.
+ */
+export const BLANK_SYNTAX = `- \`[[answer]]\` is a fill-in blank. The student's copy shows an empty line about fifteen characters wide; the teacher's copy shows the answer on it. Use it for a key word or short term inside a sentence the student completes: \`Two or more equations with the same variables form a [[system]] of equations.\`
+- \`[[n: answer]]\`, at the end of an item, is n lines of writing space below it, from 1 to 6. The student's copy is blank there; the teacher's copy shows what the student should write, briefly: a phrase, a one-sentence definition, a formula. Size n to what a student would really write: 2 for a short definition, 3 or 4 for a formula with its explanation or a worked example.`;
+
 export function outlineSystemPrompt(example: string): string {
 	return `You write lecture outlines from photos of textbook pages. Students get a printed copy and fill it in while their teacher lectures, so the outline is a note-taking scaffold: it tells them what to listen for and gives them a place to write it, and leaves the content itself for them to write. It should help them learn the material and learn how to take notes. Don't spoon-feed.
 
@@ -43,8 +50,7 @@ Reply with the outline in Markdown and nothing else: no preamble, no closing rem
 
 ## Blanks, writing space and teacher notes
 
-- \`[[answer]]\` is a fill-in blank. The student's copy shows an empty line about fifteen characters wide; the teacher's copy shows the answer on it. Use it for a key word or short term inside a sentence the student completes: \`Two or more equations with the same variables form a [[system]] of equations.\`
-- \`[[n: answer]]\`, at the end of an item, is n lines of writing space below it, from 1 to 6. The student's copy is blank there; the teacher's copy shows what the student should write, briefly: a phrase, a one-sentence definition, a formula. Size n to what a student would really write: 2 for a short definition, 3 or 4 for a formula with its explanation or a worked example.
+${BLANK_SYNTAX}
 - Every blank and every writing space carries its answer, taken from the pages. The answers are for the teacher, so keep them short and exact.
 - \`{{text}}\` is a teacher note: shown to the teacher in blue, removed from the student's copy. Use one only when a teacher would genuinely want the reminder, such as which figure to put on the board. Most outlines need none.
 

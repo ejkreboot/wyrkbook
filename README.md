@@ -107,7 +107,7 @@ src/
                               curriculum
     student/                  available work, work session, results
     s/[id]/                   QR target — opens or resumes a work session
-    api/{extract,hint,grade,plan-import}/
+    api/{extract,trim,hint,grade,plan-import}/
                               the Anthropic calls
 supabase/migrations/          schema, RLS, storage buckets
 scripts/seed-sysadmin.ts      one-time bootstrap
@@ -120,6 +120,50 @@ by the print stylesheet. Page size is US Letter. Ruled work pages are generated
 with a repeating CSS gradient at 8.4mm spacing, with a red left margin rule at
 20mm — that margin is what the grader reads to attribute work to a problem.
 The number of work pages is per-assignment (`work_pages`).
+
+Problem text is plain text with KaTeX math — `$…$` inline, `$$…$$` on a line of
+its own — and extraction writes it that way. It is rendered by `renderProblem`
+in `src/lib/markdown.ts`, which knows only math, `\$` and line breaks, so a `*`
+for multiplication or a line starting `1.` prints as typed rather than turning
+into Markdown. The same renderer draws problems on the sheet, the student's
+work page, both results pages, and as a preview under the editor's text box.
+Each problem also keeps the heading it was printed under in the book
+(`section`, migration 013), and the sheet repeats it above each group.
+
+## Trimming an exercise set
+
+Textbooks assign more drill than a student needs. **Trim the repetition** in
+the assignment editor sends the problem list to `POST /api/trim`, which returns
+a verdict per problem — keep or drop, whether it is review, and a few words on
+why ("same as 7 with fractions") — and the editor applies them to the include
+checkboxes. Nothing is written: the teacher looks, adjusts, and saves as
+usual, and from there printing, hints and grading see only the kept problems,
+with the book's numbers. **Undo trim** puts the checkboxes back as they were
+before the first trim.
+
+- **How hard** — Light, Moderate, Heavy, Minimal — is remembered per class in
+  the browser. Each level is a target for the lesson's own practice (about
+  ¾, ½, ⅓, ⅕ kept), not a quota: a set with little repetition loses less.
+- **Review problems are kept.** They are recognized by their section heading
+  (Mixed Review, Spiral Review, …), an earlier lesson number printed beside
+  them, or a topic that isn't the lesson's, and are outside the target
+  entirely. At Light and Moderate every one is kept; at Heavy and Minimal one
+  may go only when another review problem drills the identical skill, and no
+  more than about one in six. This is why extraction records `section`.
+- **Try another selection** sends the keys of the selections already shown at
+  that level, and the model picks different representatives of each redundant
+  group without cutting more or less. The history resets when the level or the
+  list itself changes, since keys are positions in the list.
+- **Anything to add** outranks all of the above: "keep every word problem",
+  "odd numbers only".
+
+The problems are sent from the editor rather than read from the database, so a
+trim sees unsaved edits. Problems go to the model under positional keys rather
+than labels, because a practice block and its review block often both start
+at 1. A problem the reply skips or garbles is kept. The prompt is
+`src/lib/server/trimPrompt.ts`; `npm run test:trim -- moderate set.json 2` runs a
+JSON list of problems through it twice in a row and prints a keep/drop table
+(costs API calls).
 
 ## Curriculum
 
@@ -171,6 +215,39 @@ Blanks hold their answer in double brackets. `[[system]]` is a fill-in line;
 handout gets them empty, the teacher copy has the answer written in, in blue —
 and like notes, the answers are left out of the handout's page source entirely.
 
+Graphs are ` ```graph ` fences, drawn as SVG (`src/lib/graph.ts`) — coordinate
+planes with functions, points and asymptotes, and number lines. A line in
+`[[ ]]` is an answer: drawn in blue on the teacher copy, absent from the
+handout, so a handout can carry an empty grid while the teacher copy shows the
+graph students should draw. **+ Graph** in the editor inserts one.
+
+````
+```graph
+x: -6..6               ranges (`step 2` for the grid); y defaults to x
+y: -4..8
+y = x^2 - 4 "f"        a function, with an optional label
+y = sqrt(x) for 0..4   restricted to a domain
+asymptote x = 3        dashed; also asymptote y = 2x + 1
+point (2, 0) vertex    open point (3, 2) for a hole
+[[y = 2x + 1]]         teacher copy only
+```
+
+```graph
+number line: -5..5
+point -2 "a"
+open point 3
+```
+````
+
+`size: small|medium|large` and `numbers: off` (blank axes for students to
+number) are the other settings. Expressions are written as they are said —
+`3(x - 1)^2`, `sin x`, `1/(x - 2)`, `e^x`, `pi`. A line that can't be read is
+left out of the drawing and explained under it on the teacher copy only.
+They are fences rather than `:::` blocks so they can sit inside an outline
+item: the outline's own `:::` would otherwise end at the graph's. `npm run
+test:graph` checks them; `npm run test:graph -- file.md > out.html` renders a
+file of them to look at.
+
 #### Outlines from textbook pages
 
 **Outline from textbook…** in the editor takes photos of textbook pages and
@@ -188,6 +265,38 @@ outline it imitates is `src/lib/server/outline-example.md`, and editing that
 file is the most direct way to change the house style. `npm run test:outline
 -- standard p1.jpg p2.jpg` runs real photos through the same prompt and prints
 the Markdown; it costs an API call.
+
+#### Importing from Word
+
+**Import from Word…**, in the editor or beside **+ Create** on the list page,
+converts outlines written before the app into the same format. It takes a
+lecture's student handout and teacher notes (`.docx`; either alone works) and
+streams one document into the body: the handout's blanks as `[[answer]]` and
+`[[n: answer]]` with the answers from the teacher's copy, and whatever is only
+in the teacher's copy as `{{notes}}`. The teacher's wording, order and
+sparseness are kept, so the result is not tied to the level switcher.
+
+The files are read in the browser (`src/lib/docx.ts`); their text and
+pictures are sent to `POST /api/outline/import`, never the files. The reader
+keeps what tells a blank from its answer: Word's list numbering and indents,
+underlines, colors, highlighting, hidden text, runs of empty lines, tables,
+and equations (converted to LaTeX).
+
+Pictures go to Claude as images, shrunk in the browser to share the 4.5 MB
+request with the text, up to 20 per import; a picture both documents share is
+sent once. Like the textbook photos, they are not stored. A coordinate plane,
+function graph or number line comes back as a ` ```graph ` block — and where
+the handout's grid is empty but the teacher's copy has the graph drawn, what
+is drawn becomes the block's `[[answers]]`. Any other picture becomes a
+teacher note describing it; decoration (a school logo) is left out. Pictures
+in old Word drawing formats (EMF/WMF), and equations stored as pictures
+(MathType, the old Equation Editor), can't be read; each becomes a teacher
+note marking the spot. Old `.doc` files need saving as `.docx` first.
+
+The prompt is `src/lib/server/importPrompt.ts`. `npm run test:docx` checks the
+reader; `npm run test:docx -- notes.docx` prints what it reads from a real
+file, and `npm run test:docx -- convert handout.docx teacher.docx` runs a
+lecture through the prompt (`-` for a missing document; costs an API call).
 
 ## Planning a term
 

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { weekLabel, addWeeks } from '$lib/week';
 	import { shrinkImage, UPLOAD_BUDGET } from '$lib/shrinkImage';
+	import ProblemText from '$lib/components/ProblemText.svelte';
 
 	let { data, form } = $props();
 
-	type Draft = { label: string; body: string };
+	type Draft = { label: string; section: string; body: string };
 
 	let files = $state<File[]>([]);
 	let previews = $state<string[]>([]);
@@ -88,7 +89,10 @@
 	}
 
 	function addProblem() {
-		problems = [...problems, { label: String(problems.length + 1), body: '' }];
+		problems = [
+			...problems,
+			{ label: String(problems.length + 1), section: problems.at(-1)?.section ?? '', body: '' }
+		];
 	}
 </script>
 
@@ -214,9 +218,15 @@
 					<span class="card-title">{problems.length} problems</span>
 					<span class="card-note">Delete anything you don't want to assign.</span>
 				</div>
+				<p class="hint" style="margin-bottom:.75rem">
+					Once it's saved, <strong>Trim</strong> in the editor can cut the repetition out for you.
+				</p>
 
 				<ul class="problem-list">
 					{#each problems as p, i (i)}
+						{#if p.section && p.section !== problems[i - 1]?.section}
+							<li class="problem-section">{p.section}</li>
+						{/if}
 						<li class="problem">
 							<input
 								class="problem-label"
@@ -226,6 +236,9 @@
 							/>
 							<div class="problem-body">
 								<textarea bind:value={p.body} aria-label="Problem {p.label}"></textarea>
+								{#if p.body.includes('$')}
+									<ProblemText body={p.body} class="ptext-preview" />
+								{/if}
 							</div>
 							<div class="problem-actions">
 								<button

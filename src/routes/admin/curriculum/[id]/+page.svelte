@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onDestroy, untrack } from 'svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import OutlineGenerator, { type Generated } from '$lib/components/OutlineGenerator.svelte';
+	import WordImport, { type ImportRequest } from '$lib/components/WordImport.svelte';
 	import { countNotes } from '$lib/markdown';
 	import { levelInfo, OUTLINE_LEVELS, rememberLevel, type OutlineLevel } from '$lib/outlineLevels';
 	import { asLines, closingFence, continueOutline, followEdit } from '$lib/outlineRegion';
@@ -70,6 +72,18 @@
 	 * without photographing the pages again.
 	 */
 	let genOpen = $state(false);
+	// The list page's "Import from Word" lands here with ?import, to open straight into it.
+	let importOpen = $state(untrack(() => page.url.searchParams.has('import')));
+	$effect(() => {
+		if (!page.url.searchParams.has('import')) return;
+		const url = new URL(page.url);
+		url.searchParams.delete('import');
+		try {
+			replaceState(url, {});
+		} catch {
+			// Router not ready yet: the flag just stays in the address bar.
+		}
+	});
 	let generating = $state(false);
 	let genStatus = $state('');
 	let genProblem = $state('');
@@ -106,6 +120,29 @@
 			return;
 		}
 		source = { ...r, start: at, end: at + text.length, edited: false };
+	}
+
+	/**
+	 * Adds a lecture converted from Word below whatever is already written. It is
+	 * the teacher's own outline, at whatever level they wrote it, so it is not
+	 * tied to `source` and the level switcher leaves it alone.
+	 */
+	async function importWord(r: ImportRequest) {
+		importOpen = false;
+		const original = body;
+		body = body.trim() ? body.replace(/\s*$/, '') + '\n\n' : '';
+		// Built afresh each time, so a retry sends exactly the same.
+		const form = new FormData();
+		if (r.handout) form.append('handout', JSON.stringify(r.handout));
+		if (r.teacher) form.append('teacher', JSON.stringify(r.teacher));
+		form.append('instructions', r.instructions);
+		form.append('missing', r.missing.join(','));
+		for (const p of r.pictures) form.append('picture', p.file, `${p.n}.jpg`);
+		const text = await writeInto(body.length, 0, 'the imported outline', form, true, (t) => t, '/api/outline/import');
+		if (text === null) {
+			body = original;
+			genRetry = () => importWord(r);
+		}
 	}
 
 	/** Rewrites the outline at another level, carrying over the teacher's edits if there are any. */
@@ -155,7 +192,8 @@
 
 	/**
 	 * Puts an outline into the body in place of body[at, at + cut): `request` as
-	 * it is when it is text, or what /api/outline/relevel writes for it, streamed
+	 * it is when it is text, or what `url` (/api/outline/relevel unless it says
+	 * otherwise) writes for it — sent as JSON, or as it is when it is a form — streamed
 	 * in and passed through `shape` on the way. Returns what went in, or null when
 	 * the run failed or was stopped (unless `keepPartial`) and the body is back as
 	 * it was.
@@ -164,9 +202,10 @@
 		at: number,
 		cut: number,
 		what: string,
-		request: string | Record<string, unknown>,
+		request: string | Record<string, unknown> | FormData,
 		keepPartial: boolean,
-		shape: (text: string) => string
+		shape: (text: string) => string,
+		url = '/api/outline/relevel'
 	): Promise<string | null> {
 		const was = body;
 		const before = body.slice(0, at);
@@ -186,12 +225,14 @@
 		genController = new AbortController();
 		let streamed = '';
 		const { outcome, problem } = await streamOutline(
-			'/api/outline/relevel',
-			{
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ ...request, class_name: klass?.name ?? '' }),
-				signal: genController.signal
-			},
+			url,
+			request instanceof FormData
+				? (request.set('class_name', klass?.name ?? ''), { body: request, signal: genController.signal })
+				: {
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ ...request, class_name: klass?.name ?? '' }),
+						signal: genController.signal
+					},
 			{
 				text: (t) => {
 					streamed += t;
@@ -303,6 +344,8 @@
 	const blank = () => wrap('[[', ']]', 'answer');
 	const outline = () => fence('::: outline', ':::', '- Main point\n    - Sub-point\n        - Detail');
 	const mathBlock = () => fence('$$', '$$', 'x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}');
+	const graph = () =>
+		fence('```graph', '```', 'x: -5..5\ny: -5..5\ny = x^2 - 3\n[[point (0, -3) "vertex"]]');
 
 	/** Esc, then Tab, leaves the editor — otherwise keyboard users are trapped in it. */
 	let tabReleased = false;
@@ -341,8 +384,23 @@
 	<div class="row-between">
 		<a class="btn btn-ghost btn-sm" href="/admin/curriculum?class={data.resource.class_id}">← Curriculum</a>
 		<div class="btn-row">
-			<button class="btn btn-sm" type="button" onclick={() => (genOpen = !genOpen)} aria-expanded={genOpen} disabled={generating}>
+			<button
+				class="btn btn-sm"
+				type="button"
+				onclick={() => ((genOpen = !genOpen), (importOpen = false))}
+				aria-expanded={genOpen}
+				disabled={generating}
+			>
 				Outline from textbook…
+			</button>
+			<button
+				class="btn btn-sm"
+				type="button"
+				onclick={() => ((importOpen = !importOpen), (genOpen = false))}
+				aria-expanded={importOpen}
+				disabled={generating}
+			>
+				Import from Word…
 			</button>
 			<a class="btn btn-sm" href="/admin/curriculum/{data.resource.id}/print?notes=0">Print handout</a>
 			<a class="btn btn-sm" href="/admin/curriculum/{data.resource.id}/print?notes=1">Print with notes</a>
@@ -366,7 +424,11 @@
 		/>
 	{/if}
 
-	{#if !genOpen && (source || generating || genProblem)}
+	{#if importOpen && !generating}
+		<WordImport onimport={importWord} onclose={() => (importOpen = false)} />
+	{/if}
+
+	{#if !genOpen && !importOpen && (source || generating || genProblem)}
 		<section class="card level-bar" aria-label="Outline level">
 			{#if source}
 				<span class="small" style="font-weight:600">Outline level</span>
@@ -478,6 +540,12 @@
 					<button type="button" class="btn btn-sm" title="Bulleted list" onclick={() => prefixLines('- ')}>• List</button>
 					<button type="button" class="btn btn-sm" title="Inline math" onclick={() => wrap('$', '$', 'x^2')}>$x$</button>
 					<button type="button" class="btn btn-sm" title="Display math" onclick={mathBlock}>$$</button>
+					<button
+						type="button"
+						class="btn btn-sm"
+						title={'Graph — a coordinate plane (x: -5..5, y = x^2, point (1, 2) "A", asymptote x = 3) or a number line (number line: -5..5). Lines in [[ ]] are answers: on your copy only.'}
+						onclick={graph}>+ Graph</button
+					>
 					<button type="button" class="btn btn-sm" title="Outline — I. a. 1. by indent (Tab / Shift-Tab)" onclick={outline}>+ Outline</button>
 					<button type="button" class="btn btn-sm" title="Fill-in blank — [[answer]], or [[3: answer]] for 3 lines of writing space" onclick={blank}>+ Blank</button>
 					<button type="button" class="btn btn-sm cur-note-btn" title="Teacher note — hidden on handouts" onclick={note}>+ Note</button>

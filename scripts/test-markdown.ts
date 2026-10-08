@@ -5,7 +5,7 @@
  * not contain a single character of a teacher note.
  */
 import { readFileSync } from 'node:fs';
-import { renderMarkdown, countNotes } from '../src/lib/markdown.ts';
+import { renderMarkdown, renderProblem, countNotes } from '../src/lib/markdown.ts';
 
 let passed = 0;
 let failed = 0;
@@ -107,6 +107,18 @@ check('answerless space and blank', blanksTeacher.includes('style="--lines:2"></
 check('lines clamped', renderMarkdown('[[99: x]]').includes('--lines:12'));
 check('links still work', renderMarkdown('[a](https://example.com)').includes('<a href="https://example.com">a</a>'));
 check('unclosed brackets stay literal', renderMarkdown('a [[b').includes('a [[b'));
+
+// Problem text: math and line breaks, and nothing else of Markdown.
+const prob = renderProblem('Simplify $\\frac{x^2}{x}$.\n(a) 2*3*4\n(b) 1. Not a list');
+check('problem: inline math', prob.includes('class="katex"'), prob);
+check('problem: asterisks stay literal', prob.includes('2*3*4') && !prob.includes('<em>'), prob);
+check('problem: a leading "1." is not a list', !prob.includes('<ol') && prob.includes('1. Not a list'), prob);
+check('problem: lines kept', (prob.match(/<br>/g) ?? []).length === 2, prob);
+check('problem: display math', renderProblem('Solve\n$$x^2 = 4$$').includes('katex-display'));
+check('problem: prices left as prose', renderProblem('It costs $5 and $10.').includes('costs $5 and $10'));
+check('problem: html escaped', !renderProblem('<b>x</b>').includes('<b>'));
+check('problem: plain old text survives', renderProblem('3x + 5 = 20, x^2, sqrt(9)').includes('3x + 5 = 20, x^2, sqrt(9)'));
+check('problem: no links or headings', !/<a |<h1/.test(renderProblem('# 4\nhttps://example.com')));
 
 // The generator's reference outline must render cleanly, and leak nothing.
 const EXAMPLE = readFileSync(new URL('../src/lib/server/outline-example.md', import.meta.url), 'utf8');

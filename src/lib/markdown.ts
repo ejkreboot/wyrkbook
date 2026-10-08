@@ -37,6 +37,10 @@
  * The Markdown is untouched; CSS marks each depth I. → a. → 1. → – whether the
  * items are typed `-` or `1.`. Lists outside the block render as usual.
  *
+ * Graphs — coordinate planes and number lines — are ```graph fences, drawn as
+ * SVG by $lib/graph. A line of one wrapped in [[double brackets]] is an answer:
+ * drawn on the teacher copy, absent from the handout.
+ *
  * Raw HTML is off. The body is typed by a teacher and read by other teachers in
  * the org; there is no reason for one of them to be able to run script in the
  * other's session.
@@ -44,6 +48,7 @@
 import MarkdownIt, { type Token } from 'markdown-it';
 import container, { type ContainerOpts } from 'markdown-it-container';
 import katex from 'katex';
+import { renderGraph } from './graph.ts';
 
 type InlineRule = Parameters<MarkdownIt['inline']['ruler']['after']>[2];
 type BlockRule = Parameters<MarkdownIt['block']['ruler']['after']>[2];
@@ -259,16 +264,19 @@ const tidyNotes: CoreRule = (state) => {
 	state.tokens = out;
 };
 
-const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
+function useMath(m: MarkdownIt) {
+	m.inline.ruler.after('escape', 'math_inline', mathInline);
+	m.block.ruler.after('blockquote', 'math_block', mathBlock, {
+		alt: ['paragraph', 'reference', 'blockquote', 'list']
+	});
+	m.renderer.rules.math_inline = (tokens, i) => tex(tokens[i].content, false);
+	m.renderer.rules.math_display = (tokens, i) => tex(tokens[i].content, true);
+	m.renderer.rules.math_block = (tokens, i) =>
+		`<div class="math-block">${tex(tokens[i].content, true)}</div>\n`;
+}
 
-md.inline.ruler.after('escape', 'math_inline', mathInline);
-md.block.ruler.after('blockquote', 'math_block', mathBlock, {
-	alt: ['paragraph', 'reference', 'blockquote', 'list']
-});
-md.renderer.rules.math_inline = (tokens, i) => tex(tokens[i].content, false);
-md.renderer.rules.math_display = (tokens, i) => tex(tokens[i].content, true);
-md.renderer.rules.math_block = (tokens, i) =>
-	`<div class="math-block">${tex(tokens[i].content, true)}</div>\n`;
+const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
+useMath(md);
 
 md.inline.ruler.after('math_inline', 'teacher_note', teacherNote);
 md.inline.ruler.after('teacher_note', 'blank', blank); // ahead of `link`, which would take `[[`
@@ -280,6 +288,15 @@ const outlineBlock: ContainerOpts = {
 	render: (tokens, i) => (tokens[i].nesting === 1 ? '<div class="outline">\n' : '</div>\n')
 };
 md.use(container, 'outline', outlineBlock);
+
+// ```graph fences are drawn as SVG ($lib/graph); their [[answers]] obey `notes`
+// like blanks do. A fence rather than a ::: container because the outline
+// container would end at a graph's closing `:::`, and a fence nests in lists.
+const fence = md.renderer.rules.fence!;
+md.renderer.rules.fence = (tokens, i, options, env, self) =>
+	tokens[i].info.trim().split(/\s+/)[0] === 'graph'
+		? renderGraph(tokens[i].content, { notes: env?.notes !== false })
+		: fence(tokens, i, options, env, self);
 
 export type RenderOptions = {
 	/** Include `{{teacher notes}}`. False for anything a student will see. */
@@ -296,4 +313,19 @@ export function countNotes(src: string): number {
 		.parse(src ?? '', { notes: true })
 		.flatMap((t) => t.children ?? [])
 		.filter((t) => t.type === 'teacher_note_open').length;
+}
+
+/**
+ * Problem text — an exercise as transcribed from the book — is not Markdown: a
+ * `*` is multiplication, a line can start with "1." or "-", and none of that may
+ * turn into emphasis or a list. So it gets a renderer that knows only math (the
+ * same `$…$` / `$$…$$` rules and dollar heuristics as above), `\$` escapes, line
+ * breaks and paragraphs. Everything else is printed as typed.
+ */
+const problemMd = new MarkdownIt('zero', { breaks: true });
+problemMd.enable(['escape', 'newline']);
+useMath(problemMd);
+
+export function renderProblem(src: string): string {
+	return problemMd.render(src ?? '');
 }

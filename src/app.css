@@ -476,6 +476,31 @@ tbody tr:hover { background: var(--paper-2); }
 .answer-line { font-size: .82rem; color: var(--ink-3); margin-top: .3rem; }
 .answer-line strong { color: var(--ink-2); font-weight: 600; }
 
+/* Problem text as printed: plain lines plus KaTeX (renderProblem in $lib/markdown). */
+.ptext { overflow-wrap: break-word; }
+.ptext p { margin: 0 0 .45em; }
+.ptext p:last-child { margin-bottom: 0; }
+.ptext .math-block { overflow-x: auto; overflow-y: hidden; }
+.ptext .katex-display { margin: .3em 0; }
+.ptext .math-error { color: var(--bad); }
+/* Under the editor's textarea: what the math will look like printed. */
+.ptext-preview {
+	margin-top: .35rem; padding: .35rem .55rem;
+	border-left: 2px solid var(--line-strong);
+	font-size: .92rem; color: var(--ink-2);
+}
+
+/* The book's heading over a group of problems ("Mixed Review"). */
+.problem-section {
+	font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+	color: var(--ink-3);
+	margin: .6rem 0 -.1rem;
+}
+.problem-section:first-child { margin-top: 0; }
+
+/* What the trimmer said about a problem. */
+.trim-note { font-size: .8rem; color: var(--ink-3); font-style: italic; margin-top: .3rem; }
+
 /* ---------------------------------------------------------------- hints */
 
 .hint-card {
@@ -749,6 +774,11 @@ tbody tr:hover { background: var(--paper-2); }
 	.phone-tile { display: none; }
 }
 
+/* Word import: a drop zone each for the handout and the teacher notes. */
+.import-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
+.import-slot { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
+.import-name { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; text-align: center; }
+
 /* Segmented control: one pressed button out of a few. */
 .seg {
 	display: inline-flex;
@@ -837,6 +867,27 @@ tbody tr:hover { background: var(--paper-2); }
 	color: var(--note); font-weight: 400;
 }
 
+/* Graphs: ```graph fences drawn as SVG by $lib/graph. The grid is a mid grey
+   rather than the page's faint lines, so it survives a photocopier. Answers
+   (g-answer) are the teacher copy's blue, like blanks; handouts never get them. */
+.md .graph-wrap { margin: .3em 0 .9em; font-weight: 400; }
+.md .graph { display: block; max-width: 100%; height: auto; overflow: visible; break-inside: avoid; }
+.graph .g-grid  { fill: none; stroke: #c8c8c8; stroke-width: .6; }
+.graph .g-axis  { fill: none; stroke: var(--ink); stroke-width: 1.1; }
+.graph .g-head  { fill: var(--ink); }
+.graph .g-curve { fill: none; stroke: var(--ink); stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+.graph .g-asym  { fill: none; stroke: var(--ink-2); stroke-width: 1.1; stroke-dasharray: 5 4; }
+.graph .g-point { fill: var(--ink); stroke: var(--ink); stroke-width: 1.2; }
+.graph .g-point.g-open { fill: #fff; }
+.graph text     { font-family: var(--sans); font-size: 9px; fill: var(--ink-2); }
+.graph .g-name  { font-style: italic; font-size: 11px; fill: var(--ink); }
+.graph .g-label { font-size: 10px; fill: var(--ink); }
+.graph .g-answer:is(.g-curve, .g-asym) { stroke: var(--note); }
+.graph .g-answer.g-point { stroke: var(--note); fill: var(--note); }
+.graph .g-answer.g-point.g-open { fill: #fff; }
+.graph text.g-answer { fill: var(--note); }
+.md .graph-error { font-family: var(--sans); font-size: .8rem; color: var(--bad); margin-top: .3em; }
+
 /* Outlines: the teacher types plain nested lists inside `::: outline`, usually
    with `-`, and the marker follows depth alone — I. → a. → 1. → –. `-` and `1.`
    items look the same here. The top level is bold, its sub-points are not. */
@@ -899,6 +950,13 @@ tbody tr:hover { background: var(--paper-2); }
 		font-weight: 700; font-variant-numeric: tabular-nums;
 	}
 	.print-problems .pbody { flex: 1; }
+	.print-problems .psection {
+		display: block;
+		font-size: 9.5pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+		margin: 5mm 0 2.5mm;
+		break-after: avoid; page-break-after: avoid;
+	}
+	.print-problems .psection:first-child { margin-top: 0; }
 
 	/* --- ruled work pages --- */
 	.work-page {

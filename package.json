@@ -15,7 +15,10 @@
     "test:import": "tsx scripts/test-import.ts",
     "icons": "bash scripts/make-icons.sh",
     "test:markdown": "tsx scripts/test-markdown.ts",
-    "test:outline": "tsx scripts/test-outline.ts"
+    "test:outline": "tsx scripts/test-outline.ts",
+    "test:trim": "tsx scripts/test-trim.ts",
+    "test:docx": "tsx scripts/test-docx.ts",
+    "test:graph": "tsx scripts/test-graph.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-vercel": "^6.3.4",
@@ -36,6 +39,7 @@
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "@vercel/functions": "^3.9.3",
+    "fflate": "^0.8.3",
     "katex": "^0.16.22",
     "markdown-it": "^14.1.0",
     "markdown-it-container": "^4.0.0",

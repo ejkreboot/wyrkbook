@@ -76,7 +76,10 @@ export type Problem = {
 	org_id: string;
 	assignment_id: string;
 	label: string;
+	/** Plain text with KaTeX math in `$…$`; rendered by renderProblem in $lib/markdown. */
 	body: string;
+	/** The heading it is printed under in the book, e.g. "Mixed Review". See migration 013. */
+	section: string | null;
 	points: number;
 	included: boolean;
 	sort_order: number;

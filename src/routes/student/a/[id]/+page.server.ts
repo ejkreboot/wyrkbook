@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	const { data: problems } = await locals.supabase
 		.from('problem')
-		.select('id, label, body, points')
+		.select('id, label, section, body, points')
 		.eq('assignment_id', assignment.id)
 		.eq('included', true)
 		.order('sort_order');

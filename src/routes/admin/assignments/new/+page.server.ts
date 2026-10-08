@@ -19,7 +19,7 @@ export const actions: Actions = {
 		const hintPenalty = Number(form.get('hint_penalty') ?? 5);
 		const workPages = Number(form.get('work_pages') ?? 4);
 
-		let problems: { label: string; body: string }[] = [];
+		let problems: { label: string; section?: string; body: string }[] = [];
 		try {
 			problems = JSON.parse(String(form.get('problems') ?? '[]'));
 		} catch {
@@ -54,6 +54,7 @@ export const actions: Actions = {
 				org_id: orgId,
 				assignment_id: assignment.id,
 				label: String(p.label ?? i + 1).slice(0, 24),
+				section: String(p.section ?? '').trim().slice(0, 120) || null,
 				body: String(p.body ?? '').trim(),
 				sort_order: i
 			}))

@@ -46,9 +46,10 @@
 					{/each}
 				</select>
 			</div>
-			<div class="field">
-				<button class="btn btn-primary" type="submit">+ Create</button>
-			</div>
+			<button class="btn btn-primary" type="submit">+ Create</button>
+			<button class="btn" type="submit" name="import" value="1" title="Create it and convert a handout and teacher notes from Word">
+				Import from Word…
+			</button>
 		</form>
 	{/if}
 

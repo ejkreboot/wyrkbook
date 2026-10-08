@@ -1,15 +1,33 @@
 <script lang="ts">
 	import { weekLabel } from '$lib/week';
+	import ProblemText from '$lib/components/ProblemText.svelte';
+	import {
+		DEFAULT_TRIM_LEVEL,
+		rememberedTrimLevel,
+		rememberTrimLevel,
+		TRIM_LEVELS,
+		trimLevelInfo,
+		type TrimLevel
+	} from '$lib/trimLevels';
 
 	let { data, form } = $props();
+
+	/**
+	 * What the last trim said about a row. `was` is the row's checkbox before the
+	 * first trim, so Undo goes back to the teacher's own selection however many
+	 * times they have asked for another.
+	 */
+	type Trim = { review: boolean; note: string; was: boolean };
 
 	type Row = {
 		id: string | null;
 		label: string;
+		section: string;
 		body: string;
 		answer: string;
 		points: number;
 		included: boolean;
+		trim: Trim | null;
 	};
 
 	// Local editable copy, re-seeded whenever the server sends a fresh list.
@@ -22,10 +40,12 @@
 			rows = data.problems.map((p) => ({
 				id: p.id,
 				label: p.label,
+				section: p.section ?? '',
 				body: p.body,
 				answer: p.answer ?? '',
 				points: Number(p.points ?? 1),
-				included: p.included
+				included: p.included,
+				trim: null
 			}));
 		}
 	});
@@ -37,7 +57,116 @@
 	let showAnswers = $state(false);
 
 	function addRow() {
-		rows = [...rows, { id: null, label: String(rows.length + 1), body: '', answer: '', points: 1, included: true }];
+		rows = [
+			...rows,
+			{
+				id: null,
+				label: String(rows.length + 1),
+				section: rows.at(-1)?.section ?? '',
+				body: '',
+				answer: '',
+				points: 1,
+				included: true,
+				trim: null
+			}
+		];
+	}
+
+	// --- trimming ---------------------------------------------------------------
+
+	let trimLevel = $state<TrimLevel>(DEFAULT_TRIM_LEVEL);
+	$effect(() => {
+		trimLevel = rememberedTrimLevel(a.class_id);
+	});
+	function pickTrimLevel(l: TrimLevel) {
+		trimLevel = l;
+		rememberTrimLevel(a.class_id, l);
+	}
+
+	let trimGuidance = $state('');
+	let trimming = $state(false);
+	let trimError = $state('');
+	let trimSummary = $state('');
+
+	/*
+	 * Selections already shown, so "another selection" can steer away from them.
+	 * Keys are positions in the list, so a selection only counts while the list
+	 * is the one it was made from: `stamp` is that list's labels and text.
+	 */
+	let shown = $state<{ level: TrimLevel; stamp: string; kept: string[] }[]>([]);
+	const stamp = $derived(rows.map((r) => `${r.label}\u0000${r.body}`).join('\u0001'));
+	const previous = $derived(
+		shown.filter((h) => h.level === trimLevel && h.stamp === stamp).map((h) => h.kept)
+	);
+	const trimmed = $derived(rows.some((r) => r.trim));
+	const reviewCount = $derived(rows.filter((r) => r.trim?.review).length);
+	const reviewKept = $derived(rows.filter((r) => r.trim?.review && r.included).length);
+
+	async function trim() {
+		const sent = stamp;
+		trimming = true;
+		trimError = '';
+		try {
+			const res = await fetch('/api/trim', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					assignment_id: a.id,
+					level: trimLevel,
+					guidance: trimGuidance,
+					previous,
+					problems: rows.map((r) => ({ label: r.label, section: r.section, body: r.body }))
+				})
+			});
+			if (!res.ok) {
+				trimError = tidyError(await res.text(), res.status);
+				return;
+			}
+			const result: {
+				problems: { key: string; review: boolean; keep: boolean; note: string }[];
+				summary: string;
+			} = await res.json();
+			if (stamp !== sent) {
+				trimError = 'The list changed while it was being trimmed. Try again.';
+				return;
+			}
+
+			shown = [
+				...shown,
+				{
+					level: trimLevel,
+					stamp: sent,
+					kept: result.problems.filter((v) => v.keep).map((v) => v.key)
+				}
+			];
+			rows = rows.map((r, i) => {
+				const v = result.problems[i];
+				return {
+					...r,
+					included: v.keep,
+					trim: { review: v.review, note: v.note, was: r.trim?.was ?? r.included }
+				};
+			});
+			trimSummary = result.summary;
+		} catch {
+			trimError = 'The request failed. Check your connection and try again.';
+		} finally {
+			trimming = false;
+		}
+	}
+
+	function undoTrim() {
+		rows = rows.map((r) => (r.trim ? { ...r, included: r.trim.was, trim: null } : r));
+		trimSummary = '';
+	}
+
+	/** SvelteKit `error()` responses are JSON; fall back to the raw text. */
+	function tidyError(text: string, status: number) {
+		try {
+			return JSON.parse(text).message ?? `Request failed (${status}).`;
+		} catch {
+			return text.slice(0, 200) || `Request failed (${status}).`;
+		}
 	}
 	function removeRow(i: number) {
 		rows = rows.filter((_, n) => n !== i);
@@ -84,7 +213,7 @@
 	{/if}
 
 	<form method="POST" action="?/save" class="stack">
-		<input type="hidden" name="problems" value={JSON.stringify(rows)} />
+		<input type="hidden" name="problems" value={JSON.stringify(rows.map(({ trim, ...r }) => r))} />
 
 		<div class="card">
 			<div class="card-head"><span class="card-title">Details</span></div>
@@ -131,6 +260,84 @@
 			</div>
 		</div>
 
+		<div class="card stack-s">
+			<div class="card-head">
+				<span class="card-title">Trim the repetition</span>
+				<span class="card-note">Review problems are kept.</span>
+			</div>
+			<p class="hint" style="margin:0">
+				Picks the problems worth doing and unchecks the rest. Nothing is saved until you save, and
+				you can ask for another selection as often as you like.
+			</p>
+
+			<div class="stack" style="gap:.4rem">
+				<div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
+					<span class="small" style="font-weight:600">How hard</span>
+					<div class="seg" role="group" aria-label="How hard to trim">
+						{#each TRIM_LEVELS as l (l.id)}
+							<button
+								type="button"
+								aria-pressed={trimLevel === l.id}
+								onclick={() => pickTrimLevel(l.id)}
+								disabled={trimming}>{l.label}</button
+							>
+						{/each}
+					</div>
+				</div>
+				<span class="muted small">
+					{trimLevelInfo(trimLevel).hint} Keeps {trimLevelInfo(trimLevel).keep} of the lesson's own problems.
+				</span>
+			</div>
+
+			<label class="stack" style="gap:.3rem">
+				<span class="small" style="font-weight:600">Anything to add <span class="muted">(optional)</span></span>
+				<textarea
+					rows="2"
+					bind:value={trimGuidance}
+					maxlength="1000"
+					disabled={trimming}
+					placeholder="e.g. Keep every word problem. She has two-step equations down cold."
+				></textarea>
+			</label>
+
+			{#if trimError}
+				<div class="alert alert-bad" role="alert">{trimError}</div>
+			{/if}
+
+			{#if trimmed && !trimming}
+				<div class="alert alert-ok">
+					<div>
+						<strong>{kept} of {rows.length} kept</strong>{#if reviewCount}
+							· {reviewKept} of {reviewCount} review{/if}. Not saved yet — <em>Save changes</em> to keep
+						this selection.
+					</div>
+					{#if trimSummary}<div class="small" style="margin-top:.3rem">{trimSummary}</div>{/if}
+				</div>
+			{/if}
+
+			<div class="btn-row">
+				<button class="btn btn-primary" type="button" onclick={trim} disabled={trimming || rows.length < 2}>
+					{#if trimming}
+						<span class="spinner"></span> Reading the set…
+					{:else if previous.length}
+						Try another selection
+					{:else}
+						Trim at {trimLevelInfo(trimLevel).label}
+					{/if}
+				</button>
+				{#if trimmed}
+					<button class="btn btn-ghost" type="button" onclick={undoTrim} disabled={trimming}>
+						Undo trim
+					</button>
+				{/if}
+			</div>
+			{#if trimming}
+				<p class="muted small" style="margin:0">
+					Working out which problems drill the same thing — this takes a little while for a long set.
+				</p>
+			{/if}
+		</div>
+
 		<div class="card">
 			<div class="card-head">
 				<span class="card-title">Problems</span>
@@ -143,6 +350,9 @@
 
 			<ul class="problem-list">
 				{#each rows as r, i (i)}
+					{#if r.section && r.section !== rows[i - 1]?.section}
+						<li class="problem-section">{r.section}</li>
+					{/if}
 					<li class="problem {r.included ? '' : 'is-excluded'}">
 						<div style="display:flex;flex-direction:column;gap:.3rem;align-items:center">
 							<input
@@ -157,10 +367,17 @@
 								bind:value={r.label}
 								aria-label="Problem number"
 							/>
+							{#if r.trim?.review}<span class="badge badge-accent" title="Reviews earlier material">review</span>{/if}
 						</div>
 
 						<div class="problem-body">
 							<textarea bind:value={r.body} aria-label="Problem {r.label} text"></textarea>
+							{#if r.body.includes('$')}
+								<ProblemText body={r.body} class="ptext-preview" />
+							{/if}
+							{#if r.trim?.note}
+								<div class="trim-note">{r.trim.note}</div>
+							{/if}
 							{#if showAnswers}
 								<div class="inline-form" style="margin-top:.4rem">
 									<div class="field">
@@ -170,6 +387,10 @@
 									<div class="field" style="flex:0 1 90px">
 										<label for="pts-{i}">Points</label>
 										<input id="pts-{i}" type="number" min="0" step="0.5" bind:value={r.points} />
+									</div>
+									<div class="field">
+										<label for="sec-{i}">Section</label>
+										<input id="sec-{i}" bind:value={r.section} placeholder="e.g. Mixed Review" />
 									</div>
 								</div>
 							{/if}
@@ -187,7 +408,7 @@
 			<div class="btn-row" style="margin-top:.75rem">
 				<button class="btn btn-sm" type="button" onclick={addRow}>+ Add a problem</button>
 				<button class="btn btn-sm" type="button" onclick={() => (showAnswers = !showAnswers)}>
-					{showAnswers ? 'Hide' : 'Show'} answers &amp; points
+					{showAnswers ? 'Hide' : 'Show'} answers, points &amp; sections
 				</button>
 			</div>
 		</div>

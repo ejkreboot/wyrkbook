@@ -82,6 +82,7 @@ export const actions: Actions = {
 		let problems: {
 			id: string;
 			label: string;
+			section: string | null;
 			body: string;
 			answer: string | null;
 			points: number;
@@ -103,6 +104,7 @@ export const actions: Actions = {
 				org_id: orgId,
 				assignment_id: params.id,
 				label: String(p.label ?? i + 1).slice(0, 24),
+				section: String(p.section ?? '').trim().slice(0, 120) || null,
 				body: String(p.body ?? '').trim(),
 				points: Number.isFinite(Number(p.points)) ? Number(p.points) : 1,
 				included: p.included !== false,

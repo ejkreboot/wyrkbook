@@ -18,13 +18,15 @@ export type ShrinkOptions = {
 	maxEdge?: number;
 	/** JPEG quality, 0–1. */
 	quality?: number;
-	/** Keep stepping the size down until the file fits. */
+	/** Keep stepping the size down until the file fits… */
 	maxBytes?: number;
+	/** …but not below this long edge, past which a page stops being legible. */
+	minEdge?: number;
 };
 
 export async function shrinkImage(
 	file: File,
-	{ maxEdge = 2000, quality = 0.82, maxBytes = Infinity }: ShrinkOptions = {}
+	{ maxEdge = 2000, quality = 0.82, maxBytes = Infinity, minEdge = 1000 }: ShrinkOptions = {}
 ): Promise<File> {
 	const img = await decode(file);
 	const name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
@@ -32,7 +34,7 @@ export async function shrinkImage(
 	let edge = Math.min(maxEdge, Math.max(img.naturalWidth, img.naturalHeight));
 	for (;;) {
 		const blob = await encode(img, edge, quality);
-		if (blob.size <= maxBytes || edge <= 1000) return new File([blob], name, { type: 'image/jpeg' });
+		if (blob.size <= maxBytes || edge <= minEdge) return new File([blob], name, { type: 'image/jpeg' });
 		edge = Math.round(edge * 0.85);
 	}
 }
@@ -64,6 +66,10 @@ async function encode(img: HTMLImageElement, edge: number, quality: number): Pro
 	canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
 	const ctx = canvas.getContext('2d');
 	if (!ctx) throw new Error('This browser could not process the photo.');
+	// JPEG has no transparency: without a backdrop, a transparent PNG's clear
+	// areas come out black — a graph drawn on nothing becomes a black square.
+	ctx.fillStyle = '#fff';
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
 	ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 	const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
 	if (!blob) throw new Error('This browser could not process the photo.');

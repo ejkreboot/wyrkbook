@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
+	import ProblemText from '$lib/components/ProblemText.svelte';
 
 	let { data } = $props();
 
@@ -147,10 +148,15 @@
 		<div class="card">
 			<div class="card-head"><span class="card-title">Problems</span></div>
 			<ol class="stack-s" style="padding-left:1.2rem;margin:0">
-				{#each data.problems as p (p.id)}
+				{#each data.problems as p, i (p.id)}
+					{#if p.section && p.section !== data.problems[i - 1]?.section}
+						<li class="problem-section" style="list-style:none">{p.section}</li>
+					{/if}
 					<li value={p.label}>
-						<span class="mono" style="color:var(--accent);font-weight:700">{p.label}.</span>
-						{p.body}
+						<div style="display:flex;gap:.4rem">
+							<span class="mono" style="color:var(--accent);font-weight:700">{p.label}.</span>
+							<ProblemText body={p.body} />
+						</div>
 					</li>
 				{/each}
 			</ol>
