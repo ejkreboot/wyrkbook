@@ -50,7 +50,7 @@
 	</div>
 
 	{#if a.instructions}
-		<div class="sheet-instructions">{a.instructions}</div>
+		<ProblemText body={a.instructions} class="sheet-instructions" />
 	{/if}
 
 	<ol class="print-problems">

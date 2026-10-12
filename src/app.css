@@ -481,7 +481,9 @@ tbody tr:hover { background: var(--paper-2); }
 .ptext p { margin: 0 0 .45em; }
 .ptext p:last-child { margin-bottom: 0; }
 .ptext .math-block { overflow-x: auto; overflow-y: hidden; }
-.ptext .katex-display { margin: .3em 0; }
+/* Flush left, beside the problem number, rather than KaTeX's centering. */
+.ptext .katex-display { margin: .3em 0; text-align: left; }
+.ptext .katex-display > .katex { text-align: left; }
 .ptext .math-error { color: var(--bad); }
 /* Under the editor's textarea: what the math will look like printed. */
 .ptext-preview {
@@ -900,6 +902,47 @@ tbody tr:hover { background: var(--paper-2); }
 .md .outline > :is(ol, ul) > li > :is(ol, ul, :not(:first-child)) { font-weight: 400; }
 
 /* ============================================================================
+   ASSIGNMENT SHEET — the printable page, laid out the same on screen as on
+   paper so the preview is honest. Print-only sizing and page breaks are below.
+   ========================================================================= */
+
+/* --- sheet header, repeated identity for loose pages --- */
+.sheet-head {
+	display: flex; justify-content: space-between; align-items: flex-start;
+	gap: 12mm;
+	border-bottom: 1.5pt solid currentColor;
+	padding-bottom: 3mm; margin-bottom: 5mm;
+}
+.sheet-head h1 { margin-bottom: 1mm; }
+.sheet-meta { font-size: .85rem; color: var(--ink-2); }
+.sheet-qr { width: 26mm; height: 26mm; flex: none; }
+.sheet-qr svg { display: block; width: 100%; height: auto; }
+
+.sheet-instructions {
+	font-style: italic;
+	border-left: 2pt solid #999; padding-left: 4mm;
+	margin-bottom: 5mm;
+}
+
+/* --- problems: the book's own labels, not the list's numbering --- */
+.print-problems { list-style: none; margin: 0; padding: 0; }
+.print-problems li {
+	display: flex; gap: 4mm;
+	margin-bottom: 3.5mm;
+}
+.print-problems .plabel {
+	flex: none; min-width: 9mm;
+	font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.print-problems .pbody { flex: 1; min-width: 0; }
+.print-problems .psection {
+	display: block;
+	font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+	margin: 5mm 0 2.5mm;
+}
+.print-problems .psection:first-child { margin-top: 0; }
+
+/* ============================================================================
    PRINT — the assignment sheet.
    Page 1+ hold the problems; a run of blank ruled pages follows so the student
    has room to work. Rule spacing is 9mm, close to college-ruled paper.
@@ -921,42 +964,12 @@ tbody tr:hover { background: var(--paper-2); }
 
 	a { color: #000; text-decoration: none; }
 
-	/* --- sheet header, repeated identity for loose pages --- */
-	.sheet-head {
-		display: flex; justify-content: space-between; align-items: flex-start;
-		gap: 12mm;
-		border-bottom: 1.5pt solid #000;
-		padding-bottom: 3mm; margin-bottom: 5mm;
-	}
-	.sheet-head h1 { font-size: 16pt; margin-bottom: 1mm; }
+	/* --- sheet header and problems: layout is shared with screen, above --- */
+	.sheet-head h1 { font-size: 16pt; }
 	.sheet-meta { font-size: 9.5pt; color: #333; }
-	.sheet-qr { width: 26mm; height: 26mm; flex: none; }
-
-	.sheet-instructions {
-		font-size: 10.5pt; font-style: italic;
-		border-left: 2pt solid #999; padding-left: 4mm;
-		margin-bottom: 5mm;
-	}
-
-	/* --- problems --- */
-	.print-problems { list-style: none; margin: 0; padding: 0; }
-	.print-problems li {
-		display: flex; gap: 4mm;
-		margin-bottom: 3.5mm;
-		break-inside: avoid; page-break-inside: avoid;
-	}
-	.print-problems .plabel {
-		flex: none; min-width: 9mm;
-		font-weight: 700; font-variant-numeric: tabular-nums;
-	}
-	.print-problems .pbody { flex: 1; }
-	.print-problems .psection {
-		display: block;
-		font-size: 9.5pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-		margin: 5mm 0 2.5mm;
-		break-after: avoid; page-break-after: avoid;
-	}
-	.print-problems .psection:first-child { margin-top: 0; }
+	.sheet-instructions { font-size: 10.5pt; }
+	.print-problems li { break-inside: avoid; page-break-inside: avoid; }
+	.print-problems .psection { font-size: 9.5pt; break-after: avoid; page-break-after: avoid; }
 
 	/* --- ruled work pages --- */
 	.work-page {

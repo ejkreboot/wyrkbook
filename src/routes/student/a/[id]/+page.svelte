@@ -141,7 +141,7 @@
 		{#if a.instructions}
 			<div class="card">
 				<div class="label">Instructions</div>
-				<p style="margin:.25rem 0 0">{a.instructions}</p>
+				<div style="margin-top:.25rem"><ProblemText body={a.instructions} /></div>
 			</div>
 		{/if}
 
