@@ -30,7 +30,9 @@ const LEVEL_TEXT: Record<OutlineLevel, string> = {
  * ($lib/server/importPrompt) so both write the same markup.
  */
 export const BLANK_SYNTAX = `- \`[[answer]]\` is a fill-in blank. The student's copy shows an empty line about fifteen characters wide; the teacher's copy shows the answer on it. Use it for a key word or short term inside a sentence the student completes: \`Two or more equations with the same variables form a [[system]] of equations.\`
-- \`[[n: answer]]\`, at the end of an item, is n lines of writing space below it, from 1 to 6. The student's copy is blank there; the teacher's copy shows what the student should write, briefly: a phrase, a one-sentence definition, a formula. Size n to what a student would really write: 2 for a short definition, 3 or 4 for a formula with its explanation or a worked example.`;
+- \`[[n: answer]]\`, at the end of an item, is n lines of writing space below it, from 1 to 12. The student's copy is blank there; the teacher's copy shows what the student should write, briefly: a phrase, a one-sentence definition, a formula. Size n to what a student would really write, by hand: 2 for a short definition, 3 or 4 for a formula with its explanation.
+- Worked examples and problems need ample room. The student writes the solution out by hand as the teacher works it, one line per step — each line of algebra, each substitution, the check, the answer — and handwriting is larger than print. So count the steps the solution takes and give at least one line for each, plus one or two to spare: 6 to 8 for solving a linear equation or a system of two, 8 to 12 for anything longer. When in doubt, give more; a cramped example is worse than a spare line.
+- Writing space is the only thing that leaves room on the page. Blank lines in the Markdown collapse to nothing, and a teacher note takes no room at all on the student's copy — it isn't there. So an item a student writes under needs its own \`[[n: …]]\`, whether or not it also has a note, and a note never stands in for the space.`;
 
 export function outlineSystemPrompt(example: string): string {
 	return `You write lecture outlines from photos of textbook pages. Students get a printed copy and fill it in while their teacher lectures, so the outline is a note-taking scaffold: it tells them what to listen for and gives them a place to write it, and leaves the content itself for them to write. It should help them learn the material and learn how to take notes. Don't spoon-feed.
@@ -58,7 +60,7 @@ ${BLANK_SYNTAX}
 
 - Skip sidebars and boxed features, worked examples set off in boxes or by markers, figure captions, footnotes, exercise sets, and opinion or devotional asides.
 - Skip the tail of a section that began before these pages unless it is substantial.
-- A worked example in the running text can be a prompt with writing space, as in the reference outline.
+- A worked example in the running text can be a prompt with writing space, as in the reference outline: the problem itself in the item, and a line of space for every step of its solution.
 - Subsections and main concepts go at the second level, supporting points at the third.
 - Plain wording in the teacher's voice.
 - Don't add homework or exercise assignments; the teacher sets those.

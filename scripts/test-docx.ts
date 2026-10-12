@@ -133,6 +133,9 @@ ${p('')}${p('')}${p('')}
 ${p(r('One empty paragraph after this is spacing'))}
 ${p('')}
 ${p('<w:del><w:r><w:delText>deleted</w:delText></w:r></w:del>' + r('kept'))}
+${li(1, r('Line breaks below') + '<w:r><w:br/><w:br/></w:r>')}
+${p(r('Then a paragraph of breaks'))}
+${p('<w:r><w:br/><w:br/></w:r>')}
 ${li(0, r('Third section'))}
 <w:sectPr/></w:body></w:document>`;
 
@@ -215,6 +218,8 @@ check('a missing document stays missing', merged.texts[1] === null);
 check('table rows', has('| Term | Meaning |') && has('| D | denominator |'));
 check('empty paragraphs counted as writing space', has('\tB.\tRoom to write\n[3 empty lines]\n'), out.text);
 check('a single empty paragraph is only spacing', has('spacing\n\n') && !has('[1 empty'));
+check('trailing line breaks counted as writing space', has('Line breaks below\n[2 empty lines]\n'), out.text);
+check('a paragraph of line breaks counted as writing space', has('paragraph of breaks\n[3 empty lines]\n'), out.text);
 check('no stray markers', !has('\u0000'));
 check('tracked deletion left out', has('kept') && !has('deleted'));
 

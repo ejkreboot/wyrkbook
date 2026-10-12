@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { openPhoneLink, receivePage } from '$lib/server/outlinePages';
+import { openPhoneLink, receivePage } from '$lib/server/phonePages';
 import type { RequestHandler } from './$types';
 
 /** The phone shrinks each photo to about 2000 px first; this only stops a runaway. */

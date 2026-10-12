@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { clearPages, folderFor, listPages, requireTeacher } from '$lib/server/outlinePages';
+import { checkedKey, clearPages, folderFor, listPages, requireTeacher } from '$lib/server/phonePages';
 import type { RequestHandler } from './$types';
 
 /**
@@ -10,12 +10,12 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const teacher = requireTeacher(locals);
-	return json({ pages: await listPages(locals, folderFor(teacher, params.resourceId)) });
+	return json({ pages: await listPages(locals, folderFor(teacher, checkedKey(params.key))) });
 };
 
 /** The desktop is starting or has stopped listening: nothing here is wanted. */
 export const DELETE: RequestHandler = async ({ locals, params }) => {
 	const teacher = requireTeacher(locals);
-	await clearPages(locals, folderFor(teacher, params.resourceId));
+	await clearPages(locals, folderFor(teacher, checkedKey(params.key)));
 	return new Response(null, { status: 204 });
 };

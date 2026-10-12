@@ -13,15 +13,19 @@
 	 * is never stale. Each upload is announced on a private Realtime channel; this
 	 * pulls the page through the app, hands it over like a picked file, and deletes
 	 * it from storage. The folder is emptied when this starts listening and again
-	 * when it stops — outline started, generator closed, page left or tab closed.
-	 * See migration 011.
+	 * when it stops — photos sent off to be read, page left or tab closed.
+	 * See migration 011 and $lib/server/phonePages.
 	 */
 	let {
-		resourceId,
+		purpose,
+		id,
 		remaining,
 		oncapture
 	}: {
-		resourceId: string;
+		/** Which page is waiting, so the phone can say what the photos are for. */
+		purpose: 'outline' | 'assignment';
+		/** The curriculum resource for an outline; for a new assignment, any UUID for the visit. */
+		id: string;
 		/** Pages still allowed; later arrivals are discarded at zero. */
 		remaining: number;
 		oncapture: (file: File) => void | Promise<void>;
@@ -34,7 +38,7 @@
 	let received = $state(0);
 	let problem = $state('');
 
-	const base = $derived(`/api/outline/pages/${resourceId}`);
+	const base = $derived(`/api/phone-pages/${id}`);
 	const seen = new Set<string>();
 	let closed = false;
 
@@ -82,7 +86,7 @@
 
 	async function refreshLink(): Promise<string | undefined> {
 		try {
-			const res = await fetch(`${base}/link`);
+			const res = await fetch(`${base}/link?for=${purpose}`);
 			if (!res.ok) throw new Error();
 			const link = (await res.json()) as { qr: string; topic: string };
 			qr = link.qr;

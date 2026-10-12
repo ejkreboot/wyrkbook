@@ -36,7 +36,7 @@
 			const form = new FormData();
 			form.append('image', small);
 			form.append('t', data.token);
-			const res = await fetch(`/phone/${data.resourceId}/upload`, { method: 'POST', body: form });
+			const res = await fetch(`/phone/${data.key}/upload`, { method: 'POST', body: form });
 			if (!res.ok) throw new Error(await reason(res));
 			shot.state = 'sent';
 		} catch (err) {
@@ -62,20 +62,23 @@
 	});
 
 	const sent = $derived(shots.filter((s) => s.state === 'sent').length);
+
+	/** The page on the computer that is waiting for these photos. */
+	const waiting = $derived(data.purpose === 'outline' ? 'the outline generator' : 'the new assignment');
 </script>
 
 <svelte:head><title>Pages · {data.title}</title></svelte:head>
 
 <section class="wrap stack" style="max-width:32rem">
 	<div class="stack" style="gap:.2rem">
-		<h1 style="margin:0">Textbook pages</h1>
+		<h1 style="margin:0">{data.purpose === 'outline' ? 'Textbook pages' : 'Exercise pages'}</h1>
 		<p class="muted" style="margin:0">for <strong>{data.title}</strong></p>
 	</div>
 
 	<p class="muted small" style="margin:0">
 		Each photo appears on your computer as soon as it is sent. Take them in page order, straight
-		on, in good light. Keep the outline generator open there until you're done. This link works
-		for two hours.
+		on, in good light. Keep {waiting} open there until you're done. This link works for two
+		hours.
 	</p>
 
 	<label class="btn btn-primary shoot" for="phone-shot">

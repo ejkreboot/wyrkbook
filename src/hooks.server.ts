@@ -42,9 +42,10 @@ const supabase: Handle = async ({ event, resolve }) => {
 };
 
 /**
- * `/phone` is the page a teacher's phone opens from the outline generator's QR.
+ * `/phone` is the page a teacher's phone opens from the QR on the outline
+ * generator or a new assignment.
  * It is not signed in; each request carries a short-lived signed link instead,
- * checked in $lib/server/outlinePages.
+ * checked in $lib/server/phonePages.
  */
 const PUBLIC_ROUTES = ['/login', '/auth', '/logout', '/phone'];
 

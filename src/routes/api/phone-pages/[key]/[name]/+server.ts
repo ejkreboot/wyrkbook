@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { BUCKET, checkedName, folderFor, requireTeacher } from '$lib/server/outlinePages';
+import { BUCKET, checkedKey, checkedName, folderFor, requireTeacher } from '$lib/server/phonePages';
 import type { RequestHandler } from './$types';
 
 /**
@@ -8,7 +8,7 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const profile = requireTeacher(locals);
-	const path = `${folderFor(profile, params.resourceId)}/${checkedName(params.name)}`;
+	const path = `${folderFor(profile, checkedKey(params.key))}/${checkedName(params.name)}`;
 
 	const { data, error: e } = await locals.supabase.storage.from(BUCKET).download(path);
 	if (e || !data) error(404, 'That page is gone.');
@@ -20,7 +20,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 export const DELETE: RequestHandler = async ({ locals, params }) => {
 	const profile = requireTeacher(locals);
-	const path = `${folderFor(profile, params.resourceId)}/${checkedName(params.name)}`;
+	const path = `${folderFor(profile, checkedKey(params.key))}/${checkedName(params.name)}`;
 
 	const { error: e } = await locals.supabase.storage.from(BUCKET).remove([path]);
 	if (e) error(500, e.message);

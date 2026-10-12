@@ -68,7 +68,7 @@ Each document is plain text read from Word, with these marks where Word had them
 - \`<b>\`, \`<i>\`, \`<u>\`, \`<s>\` are bold, italic, underline and strikethrough; \`<color C00000>\` is a font color (hex) and \`<mark yellow>\` a highlight; \`<hidden>\` is hidden text. Underlined spaces or tabs, and runs of underscores, are blanks.
 - \`$…$\` and \`$$…$$\` are Word equations, roughly converted to LaTeX.
 - \`| a | b |\` lines are the rows of a table.
-- \`[3 empty lines]\` stands for that many empty paragraphs in a row: usually space left for writing.
+- \`[3 empty lines]\` stands for that many empty paragraphs or line breaks in a row: usually space left for writing.
 - \`[picture 3]\` is a picture, attached after the documents as the image labeled Picture 3. A picture both documents share has one number. \`[picture]\` with no number is one that could not be extracted (a chart, a linked file).
 - \`[equation object]\` is an equation stored as an image (MathType, or Word's old equation editor) that could not be read.
 
@@ -85,13 +85,15 @@ Reply with the Markdown and nothing else: no preamble, no closing remarks, no co
 - What is not part of the outline — an introduction, a table, a list of vocabulary, practice problems — stays where it is, as ordinary Markdown outside the block (a table as a Markdown table). Close the block before it and open another after it if the outline carries on.
 - All math in KaTeX: \`$...$\` inline, \`$$...$$\` on lines of their own for display. That includes math typed as plain text, such as x^2, 2x - y = 10, or √x; tidy the equations from Word into valid KaTeX.
 - Drop the formatting marks: they are only clues for finding blanks and answers. Where the teacher used emphasis for its own sake, the outline does without it.
-- Leave out the parts of a page that are not the lecture: Name / Date / Period lines, page numbers, running headers and footers, and blank space left only for layout.
+- Leave out the parts of a page that are not the lecture: Name / Date / Period lines, page numbers, running headers and footers, and blank space left only for layout. Space below an item is not layout: it is writing space (below).
 
 ## Blanks, writing space and teacher notes
 
 ${BLANK_SYNTAX}
 - Put a blank where the handout has one. A blank inside a sentence is \`[[answer]]\`. Empty lines or space left below an item for writing is \`[[n: answer]]\` at the end of that item, with n the number of lines the handout leaves, from 1 to 12 — \`[3 empty lines]\` is n = 3.
 - The answers come from the teacher's copy. Where it doesn't give one, leave the answer empty — \`[[ ]]\` or \`[[3: ]]\` — rather than supplying one yourself, unless the teacher asks you to.
+- Where the handout leaves space and the teacher's copy fills the same place with notes, keep both: the space as \`[[n: …]]\` sized to the handout's empty lines, and the notes as teacher notes. The handout's space is never lost to a note.
+- Where the handout's spacing can't be read — there is only a teacher's copy, or the space below an item isn't marked with empty lines — infer it. Judge how much room a student would need under each item from what they are asked to write there: the answer or notes the teacher's copy gives, the kind of prompt it is, and how the rest of the handout is spaced. An example or problem the student solves needs a line for every step of the teacher's worked solution, as above. Then give that item \`[[n: …]]\`. An item that is only a heading or a fill-in sentence needs none.
 - With only a teacher's copy, its answers mark the blanks: answer text set apart by color, highlight, underline or hidden text becomes a blank holding it.
 - \`{{text}}\` is a teacher note: shown to the teacher in blue, removed from the student's copy. Everything in the teacher's copy that isn't on the handout and isn't a blank's answer is a teacher note — a reminder, an example to put on the board, an explanation to give, a question to ask. Keep the teacher's words in full. Put each note where it belongs: at the end of the item it goes with, as an item of its own (\`- {{…}}\`), or as a paragraph of its own outside the outline.
 - Where the documents have an \`[equation object]\`, write a teacher note in its place, such as \`{{Equation from the Word handout — retype it here}}\`. If the teacher's copy or the surrounding text makes the equation clear, write it in KaTeX instead.
@@ -155,7 +157,7 @@ export function importParams(opts: {
 		);
 	} else if (opts.teacher) {
 		parts.push(
-			`This is the teacher's copy of a lecture. There is no separate handout, so the student's version is this one with its answers taken out as blanks and its teacher-only material as notes.`,
+			`This is the teacher's copy of a lecture. There is no separate handout, so the student's version is this one with its answers taken out as blanks, its teacher-only material as notes, and room left to write wherever a student would.`,
 			doc('teacher_copy', opts.teacher)
 		);
 	}

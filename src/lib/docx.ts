@@ -17,7 +17,7 @@
  *     <hidden>                           hidden text, often where answers are kept
  *     $x^2$  $$…$$                       Word equations, written as LaTeX
  *     | a | b |                          table rows, one per line
- *     [3 empty lines]                    empty paragraphs in a row: writing space
+ *     [3 empty lines]                    empty paragraphs or line breaks: writing space
  *     [picture 2]                        a picture, numbered in `pictures`
  *     [picture] [equation object]        a picture with nothing to send (a chart,
  *                                        a linked file); an equation stored as one
@@ -402,7 +402,7 @@ class Reader {
 	blocks(el: El): string[] {
 		const out: string[] = [];
 		for (const c of kids(el)) {
-			if (c.name === 'w:p') out.push(this.paragraph(c));
+			if (c.name === 'w:p') out.push(...this.paragraph(c));
 			else if (c.name === 'w:tbl') out.push('', ...this.table(c), '');
 			else if (c.name === 'w:sdt') out.push(...this.blocks(child(c, 'w:sdtContent') ?? c));
 			else if (['w:customXml', 'w:ins', 'w:smartTag'].includes(c.name)) out.push(...this.blocks(c));
@@ -426,7 +426,7 @@ class Reader {
 			});
 	}
 
-	private paragraph(p: El): string {
+	private paragraph(p: El): string[] {
 		const pPr = child(p, 'w:pPr');
 		const style = val(child(pPr, 'w:pStyle')) ?? '';
 		let prefix = '';
@@ -449,8 +449,12 @@ class Reader {
 			if (left >= 360) prefix = '\t'.repeat(Math.max(1, Math.round(left / 720)));
 		}
 
+		// Line breaks at the end of a paragraph, or making up all of one, are
+		// writing space just as empty paragraphs are, so each counts as one.
 		const text = this.inline(p);
-		return text.trim() || prefix.trim() ? prefix + text.replace(/\s+$/, '') : EMPTY;
+		const breaks = (text.match(/\n\s*$/)?.[0].match(/\n/g) ?? []).length;
+		if (!text.trim() && !prefix.trim()) return Array(breaks + 1).fill(EMPTY);
+		return [prefix + text.replace(/\s+$/, ''), ...Array(breaks).fill(EMPTY)];
 	}
 
 	/** The list label Word would show, e.g. "II." or "b)"; "•" for bullets. */

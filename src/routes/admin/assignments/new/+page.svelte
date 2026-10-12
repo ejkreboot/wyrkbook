@@ -2,10 +2,19 @@
 	import { weekLabel, addWeeks } from '$lib/week';
 	import { shrinkImage, UPLOAD_BUDGET } from '$lib/shrinkImage';
 	import ProblemText from '$lib/components/ProblemText.svelte';
+	import PhoneCapture from '$lib/components/PhoneCapture.svelte';
 
 	let { data, form } = $props();
 
 	type Draft = { label: string; section: string; body: string };
+
+	const MAX_PAGES = 8;
+
+	/*
+	 * Photos sent from a phone wait under a key until this page takes them. The
+	 * assignment has no id until it is saved, so this visit makes up its own.
+	 */
+	const phoneKey = crypto.randomUUID();
 
 	let files = $state<File[]>([]);
 	let previews = $state<string[]>([]);
@@ -31,10 +40,13 @@
 
 	function onPick(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		const picked = Array.from(input.files ?? []);
-		files = [...files, ...picked].slice(0, 8);
-		previews = files.map((f) => URL.createObjectURL(f));
+		addFiles(Array.from(input.files ?? []));
 		input.value = '';
+	}
+
+	function addFiles(picked: File[]) {
+		files = [...files, ...picked].slice(0, MAX_PAGES);
+		previews = files.map((f) => URL.createObjectURL(f));
 	}
 
 	function removeAt(i: number) {
@@ -129,11 +141,22 @@
 				</div>
 			{/if}
 
-			<label class="btn btn-capture" for="shot">
-				<span class="big">📷</span>
-				<span>{previews.length ? 'Add another page' : 'Take or choose photos'}</span>
-				<span class="hint">JPEG, PNG or WebP · up to 8 pages</span>
-			</label>
+			<div class="gen-sources">
+				<label class="btn btn-capture" for="shot">
+					<span class="big">📷</span>
+					<span>{previews.length ? 'Add another page' : 'Take or choose photos'}</span>
+					<span class="hint">JPEG, PNG or WebP · up to {MAX_PAGES} pages</span>
+				</label>
+				<!-- Unmounting it (while reading) clears anything the phone is still sending. -->
+				{#if !busy}
+					<PhoneCapture
+						purpose="assignment"
+						id={phoneKey}
+						remaining={MAX_PAGES - files.length}
+						oncapture={(file) => addFiles([file])}
+					/>
+				{/if}
+			</div>
 			<input
 				id="shot"
 				class="sr-only"

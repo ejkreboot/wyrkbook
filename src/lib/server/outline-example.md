@@ -10,7 +10,7 @@
         - Solution set: [[3: the set of all solutions of the system, written as ordered pairs]]
 2. Solution of Systems of Linear Equations
     - Equivalent systems
-        - Example: $2x - y = 10$ and $x + 3y = -9$ [[4: equivalent systems have the same solution set; this one is equivalent to $x = 3$, $y = -4$]]
+        - Example: $2x - y = 10$ and $x + 3y = -9$ [[8: equivalent systems have the same solution set; this one is equivalent to $x = 3$, $y = -4$]]
         - Goal: transform the system to an equivalent system of the form [[3: $x = h$, $y = k$, where the solution can be read off directly]]
         - Writing the answer as a solution set: [[2: $\{(3, -4)\}$]]
     - Eliminating a variable

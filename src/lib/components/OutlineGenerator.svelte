@@ -212,7 +212,7 @@
 			</label>
 			<!-- Unmounting it (while generating) clears anything the phone is still sending. -->
 			{#if !busy}
-				<PhoneCapture {resourceId} remaining={MAX_PAGES - pages.length} oncapture={addPage} />
+				<PhoneCapture purpose="outline" id={resourceId} remaining={MAX_PAGES - pages.length} oncapture={addPage} />
 			{/if}
 		</div>
 		<input id="gen-shot" class="sr-only" type="file" accept="image/*" capture="environment" multiple onchange={onPick} disabled={busy} />
