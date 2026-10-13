@@ -307,6 +307,16 @@ export function renderMarkdown(src: string, { notes = true }: RenderOptions = {}
 	return md.render(src ?? '', { notes });
 }
 
+/** One piece of math as KaTeX HTML — for the editor, which renders it in place. */
+export function renderMath(src: string, display: boolean): string {
+	return tex(src, display);
+}
+
+/** A stretch of inline Markdown, teacher copy — for the editor, which draws a blank in place. */
+export function renderInline(src: string): string {
+	return md.renderInline(src ?? '', { notes: true });
+}
+
 /** How many teacher notes a body carries — for the reader's toggle label. */
 export function countNotes(src: string): number {
 	return md

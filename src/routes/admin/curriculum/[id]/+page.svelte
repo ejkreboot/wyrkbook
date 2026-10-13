@@ -2,10 +2,13 @@
 	import { enhance } from '$app/forms';
 	import { beforeNavigate, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
+	import type { EditorView } from '@codemirror/view';
 	import { onDestroy, untrack } from 'svelte';
+	import LiveEditor from '$lib/components/LiveEditor.svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import OutlineGenerator, { type Generated } from '$lib/components/OutlineGenerator.svelte';
 	import WordImport, { type ImportRequest } from '$lib/components/WordImport.svelte';
+	import { fence, prefixLines, wrap } from '$lib/editor/commands';
 	import { countNotes } from '$lib/markdown';
 	import { levelInfo, OUTLINE_LEVELS, rememberLevel, type OutlineLevel } from '$lib/outlineLevels';
 	import { asLines, closingFence, continueOutline, followEdit } from '$lib/outlineRegion';
@@ -15,7 +18,7 @@
 
 	let { data, form } = $props();
 
-	type Mode = 'write' | 'split' | 'preview';
+	type Mode = 'edit' | 'read';
 
 	/*
 	 * Writable deriveds: each field follows the server until the teacher edits it,
@@ -49,7 +52,7 @@
 	// Open to the rendered page when there is something to read — this is also
 	// where the teacher lectures from — and straight into writing when there is not.
 	// Chosen once per visit; saving should not flip the view out from under you.
-	let mode = $state<Mode>(untrack(() => (data.resource.body.trim() ? 'preview' : 'split')));
+	let mode = $state<Mode>(untrack(() => (data.resource.body.trim() ? 'read' : 'edit')));
 	let showNotes = $state(true);
 	let saving = $state(false);
 	let leaving = false;
@@ -58,7 +61,7 @@
 	const klass = $derived(data.classes.find((c) => c.id === classId));
 
 	let formEl = $state<HTMLFormElement>();
-	let ta = $state<HTMLTextAreaElement>();
+	let editor = $state<EditorView>();
 
 	/*
 	 * Outline generation. The generator reads the pages into a Guided outline;
@@ -66,7 +69,7 @@
 	 * outline written from it sits in the body. The level the teacher wants is
 	 * written from the Guided outline — no photos needed — whether it is the
 	 * first outline, a move to another level, or pages appended later, and it
-	 * streams into the body as it comes. The textarea is read-only meanwhile.
+	 * streams into the body as it comes. The editor is read-only meanwhile.
 	 *
 	 * A run that fails changes nothing, and can be retried from what is in memory
 	 * without photographing the pages again.
@@ -212,7 +215,7 @@
 		const after = body.slice(at + cut);
 		genProblem = '';
 		genRetry = null;
-		if (mode !== 'split') mode = 'split';
+		mode = 'edit';
 
 		if (typeof request === 'string') {
 			const text = shape(request);
@@ -261,114 +264,12 @@
 		else if (!confirm('You have unsaved changes. Leave without saving?')) nav.cancel();
 	});
 
-	/**
-	 * Replaces the selection through execCommand so the edit lands on the
-	 * textarea's own undo stack — assigning to `body` would make Cmd-Z skip it.
-	 * `from`/`to` select a range of the inserted text afterwards.
-	 */
-	function insert(text: string, from = text.length, to = from) {
-		if (!ta) return;
-		ta.focus();
-		const start = ta.selectionStart;
-		if (!document.execCommand('insertText', false, text)) {
-			ta.setRangeText(text, start, ta.selectionEnd, 'end');
-			ta.dispatchEvent(new Event('input', { bubbles: true }));
-		}
-		ta.setSelectionRange(start + from, start + to);
-	}
-
-	function selection() {
-		return ta ? body.slice(ta.selectionStart, ta.selectionEnd) : '';
-	}
-
-	/** Wraps the selection inline, e.g. **bold** or $math$. */
-	function wrap(before: string, after: string, placeholder: string) {
-		const sel = selection() || placeholder;
-		insert(before + sel + after, before.length, before.length + sel.length);
-	}
-
-	/** Wraps the selection in a fenced block on lines of its own, blank line either side. */
-	function fence(open: string, close: string, placeholder: string) {
-		if (!ta) return;
-		const before = body.slice(0, ta.selectionStart);
-		const after = body.slice(ta.selectionEnd);
-		const pre = !before || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
-		const post = !after || after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
-		const sel = selection().replace(/^\n+|\n+$/g, '') || placeholder;
-		const head = `${pre}${open}\n`;
-		insert(`${head}${sel}\n${close}${post}`, head.length, head.length + sel.length);
-	}
-
-	/** Puts a prefix at the start of every selected line — headings and lists. */
-	function prefixLines(prefix: string) {
-		if (!ta) return;
-		const lineStart = body.lastIndexOf('\n', ta.selectionStart - 1) + 1;
-		ta.setSelectionRange(lineStart, ta.selectionEnd);
-		const lines = (selection() || '').split('\n').map((l) => prefix + l);
-		const text = lines.join('\n');
-		insert(text, prefix.length, text.length);
-	}
-
-	/**
-	 * Tab / Shift-Tab: moves every selected line one outline level in or out.
-	 * Four spaces nests under both `1. ` and `10. ` parents.
-	 */
-	function indentLines(dir: 1 | -1) {
-		if (!ta) return;
-		const { selectionStart: start, selectionEnd: end } = ta;
-		const lineStart = body.lastIndexOf('\n', start - 1) + 1;
-		// A selection ending at the start of a line doesn't include that line.
-		const lastEnd = end > start && body[end - 1] === '\n' ? end - 1 : end;
-		const nl = body.indexOf('\n', lastEnd);
-		const lineEnd = nl === -1 ? body.length : nl;
-
-		const lines = body.slice(lineStart, lineEnd).split('\n');
-		const multi = lines.length > 1;
-		const out = lines.map((l) =>
-			dir === 1 ? (multi && !l.trim() ? l : '    ' + l) : l.replace(/^(\t| {1,4})/, '')
-		);
-		const text = out.join('\n');
-		if (text === lines.join('\n')) return;
-
-		ta.setSelectionRange(lineStart, lineEnd);
-		if (start === end) {
-			// Keep the caret where it was in the line, never left of the line start.
-			const caret = Math.max(0, start - lineStart + out[0].length - lines[0].length);
-			insert(text, caret);
-		} else {
-			insert(text, 0, text.length);
-		}
-	}
-
-	const note = () => wrap('{{', '}}', 'remind myself to…');
-	const blank = () => wrap('[[', ']]', 'answer');
-	const outline = () => fence('::: outline', ':::', '- Main point\n    - Sub-point\n        - Detail');
-	const mathBlock = () => fence('$$', '$$', 'x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}');
+	const note = () => editor && wrap(editor, '{{', '}}', 'remind myself to…');
+	const blank = () => editor && wrap(editor, '[[', ']]', 'answer');
+	const outline = () => editor && fence(editor, '::: outline', ':::', '- Main point\n    - Sub-point\n        - Detail');
+	const mathBlock = () => editor && fence(editor, '$$', '$$', 'x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}');
 	const graph = () =>
-		fence('```graph', '```', 'x: -5..5\ny: -5..5\ny = x^2 - 3\n[[point (0, -3) "vertex"]]');
-
-	/** Esc, then Tab, leaves the editor — otherwise keyboard users are trapped in it. */
-	let tabReleased = false;
-
-	function onEditorKeydown(e: KeyboardEvent) {
-		if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-			if (tabReleased) {
-				tabReleased = false;
-				return;
-			}
-			e.preventDefault();
-			indentLines(e.shiftKey ? -1 : 1);
-			return;
-		}
-		if (e.key !== 'Shift') tabReleased = e.key === 'Escape';
-
-		if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-		const k = e.key.toLowerCase();
-		if (k === 'b') wrap('**', '**', 'bold');
-		else if (k === 'i') wrap('*', '*', 'italic');
-		else return;
-		e.preventDefault();
-	}
+		editor && fence(editor, '```graph', '```', 'x: -5..5\ny: -5..5\ny = x^2 - 3\n[[point (0, -3) "vertex"]]');
 
 	function onWindowKeydown(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
@@ -523,7 +424,7 @@
 
 		<div class="cur-toolbar">
 			<div class="seg" role="group" aria-label="View">
-				{#each [['write', 'Write'], ['split', 'Split'], ['preview', 'Read']] as [m, label] (m)}
+				{#each [['edit', 'Edit'], ['read', 'Read']] as [m, label] (m)}
 					<button
 						type="button"
 						aria-pressed={mode === m}
@@ -532,13 +433,15 @@
 				{/each}
 			</div>
 
-			{#if mode !== 'preview'}
-				<div class="cur-format" role="group" aria-label="Formatting">
-					<button type="button" class="btn btn-sm" title="Heading" onclick={() => prefixLines('## ')}>H</button>
-					<button type="button" class="btn btn-sm" title="Bold (⌘B)" onclick={() => wrap('**', '**', 'bold')}><b>B</b></button>
-					<button type="button" class="btn btn-sm" title="Italic (⌘I)" onclick={() => wrap('*', '*', 'italic')}><i>I</i></button>
-					<button type="button" class="btn btn-sm" title="Bulleted list" onclick={() => prefixLines('- ')}>• List</button>
-					<button type="button" class="btn btn-sm" title="Inline math" onclick={() => wrap('$', '$', 'x^2')}>$x$</button>
+			{#if mode === 'edit'}
+				<!-- mousedown kept from the buttons so the editor keeps its focus and selection. -->
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<div class="cur-format" role="group" aria-label="Formatting" onmousedown={(e) => e.preventDefault()}>
+					<button type="button" class="btn btn-sm" title="Heading" onclick={() => editor && prefixLines(editor, '## ')}>H</button>
+					<button type="button" class="btn btn-sm" title="Bold (⌘B)" onclick={() => editor && wrap(editor, '**', '**', 'bold')}><b>B</b></button>
+					<button type="button" class="btn btn-sm" title="Italic (⌘I)" onclick={() => editor && wrap(editor, '*', '*', 'italic')}><i>I</i></button>
+					<button type="button" class="btn btn-sm" title="Bulleted list" onclick={() => editor && prefixLines(editor, '- ')}>• List</button>
+					<button type="button" class="btn btn-sm" title="Inline math" onclick={() => editor && wrap(editor, '$', '$', 'x^2')}>$x$</button>
 					<button type="button" class="btn btn-sm" title="Display math" onclick={mathBlock}>$$</button>
 					<button
 						type="button"
@@ -552,7 +455,7 @@
 				</div>
 			{/if}
 
-			{#if mode !== 'write'}
+			{#if mode === 'read'}
 				<label class="check small cur-notes-toggle">
 					<input type="checkbox" bind:checked={showNotes} />
 					Teacher notes{noteCount ? ` (${noteCount})` : ''}
@@ -560,25 +463,23 @@
 			{/if}
 		</div>
 
-		<div class="cur-editor mode-{mode}">
+		<div class="cur-editor">
 			<input type="hidden" name="outline_source" value={source ? JSON.stringify(source) : ''} />
-			<!-- Kept mounted in Read mode (just hidden) so the form still submits the body. -->
-			<textarea
-				class="cur-source"
-				name="body"
-				aria-label="Markdown source"
-				spellcheck="true"
-				placeholder={'# Lecture title\n\nProse, lists and tables in Markdown. Math in $x^2$ or on its own lines:\n\n$$\n\\int_0^1 x\\,dx = \\tfrac12\n$$\n\n::: outline\n- Marked I. a. 1. by indent\n    - Tab to nest, Shift-Tab to outdent {{only I see this — hidden on handouts}}\n:::'}
-				bind:this={ta}
-				value={body}
-				oninput={(e) => onBodyInput(e.currentTarget.value)}
-				onkeydown={onEditorKeydown}
-				readonly={generating}
-				hidden={mode === 'preview'}
-			></textarea>
+			<input type="hidden" name="body" value={body} />
+			<!-- Kept mounted in Read mode (just hidden) so its cursor and undo history survive. -->
+			<div class="card cur-edit" hidden={mode !== 'edit'}>
+				<LiveEditor
+					value={body}
+					oninput={onBodyInput}
+					readonly={generating}
+					label="Lecture"
+					placeholder={'# Lecture title\n\nProse, lists and tables. Math in $x^2$ or on its own lines between $$.\n\n::: outline\n- Marked I. a. 1. by indent\n    - Tab to nest, Shift-Tab to outdent {{only I see this — hidden on handouts}}\n:::'}
+					bind:view={editor}
+				/>
+			</div>
 
-			{#if mode !== 'write'}
-				<div class="card cur-preview" aria-label="Preview">
+			{#if mode === 'read'}
+				<div class="card cur-preview" aria-label="Lecture">
 					{#if body.trim()}
 						<Markdown source={body} notes={showNotes} />
 					{:else}

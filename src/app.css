@@ -808,19 +808,53 @@ tbody tr:hover { background: var(--paper-2); }
 .cur-notes-toggle { margin-left: auto; align-items: center; color: var(--note); font-weight: 600; }
 
 .cur-editor { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
-.cur-source {
-	font-family: var(--mono); font-size: .92rem; line-height: 1.55;
-	tab-size: 4;
-	min-height: 70vh;
-}
-@media (min-width: 1040px) {
-	.cur-editor.mode-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-	/* Side by side, both panes scroll on their own under the sticky save bar. */
-	.cur-editor.mode-split .cur-source,
-	.cur-editor.mode-split .cur-preview {
-		height: calc(100dvh - 220px); min-height: 420px;
-		resize: none; overflow: auto;
-	}
+.cur-edit { padding: 0; overflow: hidden; }
+.cur-edit[hidden] { display: none; }
+
+/* The live editor ($lib/editor/live): the Markdown itself, dressed to read like
+   the rendered page. Syntax the cursor is in shows faint; the rest is hidden or
+   drawn. Sizes follow .md below so a lecture looks the same in both modes. */
+.cur-live { --cm-pad: 1.5rem; }
+.cur-live .cm-editor { min-height: 70vh; background: transparent; }
+.cur-live.is-readonly .cm-content { opacity: .75; }
+.cur-live .cm-placeholder { color: var(--ink-3); }
+.cur-live .cm-md-syntax { color: var(--ink-3); font-weight: 400; font-style: normal; }
+.cur-live .cm-md-h { font-weight: 700; line-height: 1.3; }
+.cur-live .cm-md-h1 { font-size: 1.45rem; padding-top: .5em !important; }
+.cur-live .cm-md-h2 { font-size: 1.2rem; padding-top: .4em !important; }
+.cur-live .cm-md-h3 { font-size: 1.05rem; }
+.cur-live .cm-md-h4 { color: var(--ink-2); }
+.cur-live .cm-md-em { font-style: italic; }
+.cur-live .cm-md-strong { font-weight: 700; }
+.cur-live .cm-md-strike { text-decoration: line-through; }
+.cur-live .cm-md-code { background: var(--paper-2); border-radius: 4px; }
+.cur-live .cm-md-link { color: var(--accent); }
+.cur-live .cm-md-pre { background: var(--paper-2); }
+.cur-live .cm-md-math-src,
+.cur-live .cm-md-math-lines { color: var(--ink-2); background: color-mix(in srgb, var(--paper-2) 60%, transparent); }
+.cur-live .cm-md-math { cursor: text; }
+.cur-live .cm-md-figure { padding: .2em var(--cm-pad); cursor: pointer; font-family: var(--mono); }
+.cur-live .cm-md-figure .math-block,
+.cur-live .cm-md-figure .graph-wrap { margin: 0; }
+.cur-live .cm-md-figure:hover { background: var(--paper-2); }
+.cur-live .cm-md-preview { cursor: default; border-left: 3px solid var(--line); margin-left: var(--cm-pad); padding-left: 1ch; }
+.cur-live .cm-md-preview:hover { background: none; }
+.cur-live .cm-md-note { color: var(--note); font-weight: 400; }
+.cur-live .cm-md-blank { color: var(--note); border-bottom: 1px solid var(--ink); }
+.cur-live .cm-md-write { color: var(--note); border-bottom: 1px dashed var(--ink-3); }
+/* A writing-space blank, drawn at its printed height. The faint rule shows how
+   far the space runs, which blank paper on screen otherwise wouldn't. */
+.cur-live .cm-md-space { cursor: pointer; }
+/* The editor keeps whitespace as typed; the printed blank collapses it, as here. */
+.cur-live .cm-md-space .write { text-indent: 0; white-space: normal; border-left: 2px solid var(--line); }
+.cur-live .cm-md-space:hover .write { background: var(--paper-2); }
+.cur-live .cm-md-marker { color: var(--ink-2); }
+.cur-live .cm-md-omarker { font-weight: 700; color: var(--ink); }
+.cur-live .cm-md-marker.cm-md-note { color: var(--note); }
+.cur-live .cm-md-in-outline { box-shadow: inset 3px 0 var(--line); }
+.cur-live .cm-md-fence { box-shadow: inset 3px 0 var(--line); }
+.cur-live .cm-md-fence-label {
+	font-size: .72em; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
 }
 .cur-preview { padding: 1.25rem 1.5rem; }
 
