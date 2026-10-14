@@ -2,8 +2,12 @@
  * Checks the live editor's parser ($lib/editor/syntax) finds the curriculum
  * constructs where markdown-it does. Run with: npm run test:editor
  */
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { ensureSyntaxTree } from '@codemirror/language';
+import { EditorState, type StateCommand } from '@codemirror/state';
 import { GFM, parser as base } from '@lezer/markdown';
 import { listMarker } from '../src/lib/editor/markers.ts';
+import { addLine, removeLineAfter, removeLineBefore } from '../src/lib/editor/space.ts';
 import { curriculumSyntax } from '../src/lib/editor/syntax.ts';
 import { renderMarkdown } from '../src/lib/markdown.ts';
 
@@ -94,6 +98,35 @@ same('plain bullets', markers('- A\n- B', false), ['•', '•']);
 same('roman out of range falls back', markers('0. Zero', true), ['0.']);
 // …and markdown-it agrees on where the count starts.
 check('reader starts at 4', /<ol start="4">/.test(renderMarkdown('::: outline\n4. Four\n5. Five\n:::')));
+
+// Writing spaces: Enter and Backspace change the count behind the scenes.
+// `|` marks the cursor, before and after.
+function key(name: string, command: StateCommand, before: string, after: string) {
+	const at = before.indexOf('|');
+	let state = EditorState.create({
+		doc: before.replace('|', ''),
+		selection: { anchor: at },
+		extensions: markdown({ base: markdownLanguage, extensions: [curriculumSyntax] })
+	});
+	ensureSyntaxTree(state, state.doc.length, 1000);
+	const handled = command({ state, dispatch: (tr) => (state = tr.state) });
+	const got = handled ? state.sliceDoc(0, state.selection.main.head) + '|' + state.sliceDoc(state.selection.main.head) : 'not handled';
+	check(name, got === after, `got ${JSON.stringify(got)}, want ${JSON.stringify(after)}`);
+}
+
+key('enter adds a line', addLine, 'Q [[3: ans|]]', 'Q [[4: ans|]]');
+key('enter in an empty space', addLine, 'Q [[3: |]]', 'Q [[4: |]]');
+key('enter stops at 12', addLine, 'Q [[12: a|]]', 'Q [[12: a|]]');
+key('enter makes a blank a space', addLine, 'A [[sys|tem]] b', 'A [[1: sys|tem]] b');
+key('enter elsewhere is ordinary', addLine, 'Q| [[3: ans]]', 'not handled');
+key('backspace at answer start', removeLineBefore, 'Q [[3: |ans]]', 'Q [[2: |ans]]');
+key('backspace after the space', removeLineBefore, 'Q [[3: ans]]| x', 'Q [[2: ans]]| x');
+key('backspace in the answer is ordinary', removeLineBefore, 'Q [[3: an|s]]', 'not handled');
+key('last line of an empty space goes', removeLineBefore, 'Q [[1: ]]|', 'Q |');
+key('last line with an answer stays', removeLineBefore, 'Q [[1: ans]]|', 'Q [[1: ans|]]');
+key('delete at answer end', removeLineAfter, 'Q [[10: ans|]]', 'Q [[9: ans|]]');
+key('delete before the space', removeLineAfter, 'Q |[[2: ans]]', 'Q |[[1: ans]]');
+key('a count past 12 shrinks from 12', removeLineAfter, 'Q [[20: ans|]]', 'Q [[11: ans|]]');
 
 console.log(`${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

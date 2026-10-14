@@ -450,7 +450,7 @@
 						onclick={graph}>+ Graph</button
 					>
 					<button type="button" class="btn btn-sm" title="Outline — I. a. 1. by indent (Tab / Shift-Tab)" onclick={outline}>+ Outline</button>
-					<button type="button" class="btn btn-sm" title="Fill-in blank — [[answer]], or [[3: answer]] for 3 lines of writing space" onclick={blank}>+ Blank</button>
+					<button type="button" class="btn btn-sm" title="Fill-in blank — [[answer]]. Enter inside it adds lines of writing space; Backspace takes them away" onclick={blank}>+ Blank</button>
 					<button type="button" class="btn btn-sm cur-note-btn" title="Teacher note — hidden on handouts" onclick={note}>+ Note</button>
 				</div>
 			{/if}

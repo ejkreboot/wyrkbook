@@ -841,13 +841,21 @@ tbody tr:hover { background: var(--paper-2); }
 .cur-live .cm-md-preview:hover { background: none; }
 .cur-live .cm-md-note { color: var(--note); font-weight: 400; }
 .cur-live .cm-md-blank { color: var(--note); border-bottom: 1px solid var(--ink); }
-.cur-live .cm-md-write { color: var(--note); border-bottom: 1px dashed var(--ink-3); }
-/* A writing-space blank, drawn at its printed height. The faint rule shows how
-   far the space runs, which blank paper on screen otherwise wouldn't. */
-.cur-live .cm-md-space { cursor: pointer; }
-/* The editor keeps whitespace as typed; the printed blank collapses it, as here. */
-.cur-live .cm-md-space .write { text-indent: 0; white-space: normal; border-left: 2px solid var(--line); }
-.cur-live .cm-md-space:hover .write { background: var(--paper-2); }
+/* A writing space: never shown as syntax. The answer is typed in place, and
+   the space it sits in grows and shrinks with Enter and Backspace
+   ($lib/editor/space). Sized like .md .write — n lines of 1.9em, the answer's
+   own line included — with the faint rule showing how far it runs. */
+.cur-live .cm-md-space-start { display: block; height: .25em; }
+.cur-live .cm-md-write { color: var(--note); padding-left: 1ch; }
+.cur-live .cm-md-space-rest {
+	display: block; position: relative; cursor: text; text-indent: 0;
+	height: max(.3em, calc(var(--lines) * 1.9em - 1.6em));
+}
+.cur-live .cm-md-space-rest::before {
+	content: ''; position: absolute; left: 0; bottom: 0; top: -1.6em;
+	border-left: 2px solid var(--line); pointer-events: none;
+}
+.cur-live .cm-md-space-rest:hover { background: var(--paper-2); }
 .cur-live .cm-md-marker { color: var(--ink-2); }
 .cur-live .cm-md-omarker { font-weight: 700; color: var(--ink); }
 .cur-live .cm-md-marker.cm-md-note { color: var(--note); }

@@ -9,7 +9,12 @@
  * plain typing: inline syntax opens up when the cursor is inside it, line syntax
  * (headings, list markers, fences) when it is on the line. While math or a graph
  * is open for editing, its rendering stays underneath as a live preview. With
- * the editor unfocused, nothing is open.
+ * the editor unfocused, nothing is open — and while the mouse button is down,
+ * nothing opens or closes: a click or drag works on the page as it was when it
+ * started.
+ *
+ * Writing spaces never open: their answer is typed in place and their size
+ * changed with Enter and Backspace, as $lib/editor/space describes.
  */
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
@@ -17,8 +22,9 @@ import { countColumn, EditorState, StateEffect, StateField, type Extension, type
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
 import { renderGraph } from '$lib/graph';
-import { renderInline, renderMath } from '$lib/markdown';
+import { renderMath } from '$lib/markdown';
 import { listDepth, listMarker } from './markers';
+import { writingSpace, writingSpaceKeymap } from './space';
 import { curriculumSyntax } from './syntax';
 
 /* ---------------------------------------------------------------- widgets */
@@ -43,6 +49,11 @@ abstract class Widget extends WidgetType {
 	abstract tag: 'span' | 'div';
 	abstract className: string;
 
+	/** Where a click puts the cursor, given where the widget sits: by default the start of what it replaced. */
+	anchor(pos: number): number {
+		return pos;
+	}
+
 	eq(other: WidgetType): boolean {
 		return other.constructor === this.constructor && (other as Widget).src === this.src;
 	}
@@ -50,11 +61,11 @@ abstract class Widget extends WidgetType {
 		const el: HTMLElement = document.createElement(this.tag);
 		el.className = this.className;
 		el.innerHTML = this.html();
-		// A click opens the source: put the cursor at the start of what this replaced.
+		// A click opens the source.
 		el.addEventListener('mousedown', (e) => {
 			if (e.button !== 0 || !el.isConnected) return;
 			e.preventDefault();
-			view.dispatch({ selection: { anchor: view.posAtDOM(el) } });
+			view.dispatch({ selection: { anchor: this.anchor(view.posAtDOM(el)) } });
 			view.focus();
 		});
 		return el;
@@ -77,13 +88,31 @@ class DisplayMath extends Widget {
 }
 
 /**
- * A `[[3: answer]]` blank as the teacher copy prints it: the answer in blue,
- * then the rest of the writing space, so the page's spacing shows while writing.
+ * A writing space as the teacher copy prints it, around the answer the teacher
+ * types: SpaceStart stands in for the `[[3: ` and starts the space on a line of
+ * its own; SpaceRest stands in for the `]]` and is the room left below the answer.
  */
-class WritingSpace extends Widget {
+class SpaceStart extends WidgetType {
+	eq(other: WidgetType): boolean {
+		return other instanceof SpaceStart;
+	}
+	toDOM(): HTMLElement {
+		const el = document.createElement('span');
+		el.className = 'cm-md-space-start';
+		return el;
+	}
+}
+
+/** `src` is the line count. A click puts the cursor at the end of the answer, just before it. */
+class SpaceRest extends Widget {
 	tag = 'span' as const;
-	className = 'md cm-md-space';
-	html = () => cached('w' + this.src, () => renderInline(this.src));
+	className = 'cm-md-space-rest';
+	html = () => '';
+	toDOM(view: EditorView): HTMLElement {
+		const el = super.toDOM(view);
+		el.style.setProperty('--lines', this.src);
+		return el;
+	}
 }
 
 class Graph extends Widget {
@@ -170,6 +199,40 @@ const focusTracker = ViewPlugin.define((view) => {
 	}
 });
 
+/* ---------------------------------------------------------- pointer state */
+
+const setPointer = StateEffect.define<boolean>();
+/** The mouse button is down in the editor. */
+const pointer = StateField.define<boolean>({
+	create: () => false,
+	update: (value, tr) => tr.effects.reduce((v, e) => (e.is(setPointer) ? e.value : v), value)
+});
+
+/**
+ * Raises `pointer` on mousedown and drops it once the button is up — after
+ * CodeMirror's own mouseup, which sets the final selection from the page as the
+ * drag saw it. A text drag-and-drop never sends a mouseup; the next buttonless
+ * mousemove ends it instead.
+ */
+const pointerTracker = EditorView.domEventHandlers({
+	mousedown(e, view) {
+		if (e.button !== 0) return false;
+		view.dispatch({ effects: setPointer.of(true) });
+		const win = view.dom.ownerDocument.defaultView ?? window;
+		const up = () => {
+			win.removeEventListener('mouseup', up);
+			win.removeEventListener('mousemove', move);
+			if (view.dom.isConnected && view.state.field(pointer)) view.dispatch({ effects: setPointer.of(false) });
+		};
+		const move = (m: MouseEvent) => {
+			if (!(m.buttons & 1)) up();
+		};
+		win.addEventListener('mouseup', up);
+		win.addEventListener('mousemove', move);
+		return false;
+	}
+});
+
 /* ------------------------------------------------------------ decorations */
 
 const line = (cls: string) => Decoration.line({ class: cls });
@@ -177,16 +240,28 @@ const mark = (cls: string) => Decoration.mark({ class: cls });
 const hide = Decoration.replace({});
 const syntax = mark('cm-md-syntax');
 
-function build(state: EditorState): DecorationSet {
+/** The decorations, and the hidden stretches the cursor must step over whole. */
+interface Built {
+	deco: DecorationSet;
+	atoms: DecorationSet;
+}
+
+function build(state: EditorState): Built {
 	const doc = state.doc;
 	const tree = ensureSyntaxTree(state, doc.length, 200) ?? syntaxTree(state);
 	const ranges = state.field(focused) ? state.selection.ranges : [];
 	const out: Range<Decoration>[] = [];
+	const atoms: Range<Decoration>[] = [];
 
 	/** The cursor or selection is in or at the edge of [from, to]. */
 	const touches = (from: number, to: number) => ranges.some((r) => r.from <= to && r.to >= from);
 	/** …anywhere on the lines [from, to] spans. */
 	const onLines = (from: number, to: number) => touches(doc.lineAt(from).from, doc.lineAt(to).to);
+	/** The cursor or an end of a selection is on those lines — a selection just passing over them doesn't count. */
+	const endsOnLines = (from: number, to: number) => {
+		const [a, b] = [doc.lineAt(from).from, doc.lineAt(to).to];
+		return ranges.some((r) => (r.anchor >= a && r.anchor <= b) || (r.head >= a && r.head <= b));
+	};
 	/** Nothing but indentation before `pos` on its line. */
 	const startsLine = (pos: number) => !doc.sliceString(doc.lineAt(pos).from, pos).trim();
 	const eachLine = (from: number, to: number, deco: Decoration) => {
@@ -196,12 +271,13 @@ function build(state: EditorState): DecorationSet {
 
 	/**
 	 * Math blocks and graphs: drawn in place of their lines, or — while the
-	 * cursor is in them — their source, with the drawing underneath.
+	 * cursor is in them — their source, with the drawing underneath. Selecting
+	 * across one leaves it drawn; opening it would push the selection's end away.
 	 */
 	const figure = (node: SyntaxNode, widget: Widget, closed: boolean, cls: string) => {
 		const first = doc.lineAt(node.from);
 		const last = doc.lineAt(node.to);
-		if (closed && !onLines(node.from, node.to)) {
+		if (closed && !endsOnLines(node.from, node.to)) {
 			out.push(
 				startsLine(node.from)
 					? Decoration.replace({ widget, block: true }).range(first.from, last.to)
@@ -287,7 +363,7 @@ function build(state: EditorState): DecorationSet {
 				case 'NoteMark':
 				case 'BlankMark':
 				case 'CodeMark':
-					if (!parent || parent.name === 'FencedCode') break;
+					if (!parent || parent.name === 'FencedCode' || parent.getChild('BlankLines')) break;
 					out.push((touches(parent.from, parent.to) ? syntax : hide).range(n.from, n.to));
 					break;
 				case 'QuoteMark':
@@ -340,20 +416,19 @@ function build(state: EditorState): DecorationSet {
 					out.push(mark('cm-md-note').range(n.from, n.to));
 					break;
 				case 'Blank': {
-					const marks = n.getChildren('BlankMark');
-					const lines = n.getChild('BlankLines');
-					if (lines && !touches(n.from, n.to)) {
-						out.push(Decoration.replace({ widget: new WritingSpace(doc.sliceString(n.from, n.to)) }).range(n.from, n.to));
-						return false;
+					const space = writingSpace(doc, n);
+					if (space) {
+						const start = Decoration.replace({ widget: new SpaceStart() }).range(space.from, space.start);
+						const rest = Decoration.replace({ widget: new SpaceRest(String(space.lines)) }).range(space.end, space.to);
+						out.push(start, rest);
+						atoms.push(start, rest);
+						if (space.end > space.start) out.push(mark('cm-md-write').range(space.start, space.end));
+						break; // on into the answer, for its own emphasis and math
 					}
-					const from = lines ? lines.to : marks[0].to;
-					if (marks[1].from > from)
-						out.push(mark(lines ? 'cm-md-write' : 'cm-md-blank').range(from, marks[1].from));
+					const marks = n.getChildren('BlankMark');
+					if (marks[1].from > marks[0].to) out.push(mark('cm-md-blank').range(marks[0].to, marks[1].from));
 					break;
 				}
-				case 'BlankLines': // only reached while the blank is open; closed, it is drawn whole
-					out.push(syntax.range(n.from, n.to));
-					break;
 
 				case 'OutlineFence': {
 					const l = doc.lineAt(n.from);
@@ -398,18 +473,21 @@ function build(state: EditorState): DecorationSet {
 		}
 	});
 
-	return Decoration.set(out, true);
+	return { deco: Decoration.set(out, true), atoms: Decoration.set(atoms, true) };
 }
 
-const decorations = StateField.define<DecorationSet>({
+const decorations = StateField.define<Built>({
 	create: build,
 	update(deco, tr) {
-		const refocused = tr.effects.some((e) => e.is(setFocus));
-		if (tr.docChanged || tr.selection || refocused || syntaxTree(tr.state) !== syntaxTree(tr.startState))
+		// Held still under the mouse: a drag that opened what it passed over would
+		// move the text out from under the pointer and select something else.
+		if (tr.state.field(pointer) && !tr.docChanged) return deco;
+		const settled = tr.effects.some((e) => e.is(setFocus) || e.is(setPointer));
+		if (tr.docChanged || tr.selection || settled || syntaxTree(tr.state) !== syntaxTree(tr.startState))
 			return build(tr.state);
 		return deco;
 	},
-	provide: (f) => EditorView.decorations.from(f)
+	provide: (f) => [EditorView.decorations.from(f, (b) => b.deco), EditorView.atomicRanges.from(f, (b) => () => b.atoms)]
 });
 
 const theme = EditorView.theme({
@@ -426,7 +504,10 @@ export function livePreview(): Extension {
 		markdown({ base: markdownLanguage, extensions: [curriculumSyntax] }),
 		focused,
 		focusTracker,
+		pointer,
+		pointerTracker,
 		decorations,
+		writingSpaceKeymap,
 		EditorView.lineWrapping,
 		theme
 	];
