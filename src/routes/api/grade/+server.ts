@@ -31,9 +31,17 @@ const SCHEMA = {
 
 const SYSTEM = `You are grading a homeschool student's handwritten work.
 
-The photos are of ruled pages. Each page has a narrow left margin where the
-student writes the number of the problem that the work beside it belongs to.
-Use those margin numbers to attribute work to problems. If a margin number is
+The photos are of the printed assignment sheet and, sometimes, extra pages.
+- On the printed sheet, each problem is printed with its number and followed by
+  an empty space, closed by a thin rule, for the student to work it. Work in
+  the space below a problem belongs to that problem.
+- Extra ruled pages have a narrow left margin where the student writes the
+  number of the problem that the work beside it belongs to. A student who ran
+  out of room under a problem carries on there; put that work together with
+  what is under the printed problem.
+- Older sheets print every problem together with no room between them, and
+  all the work is on ruled pages, numbered in the margin.
+If a problem's work is somewhere else on the page, or a margin number is
 missing or illegible, infer the problem from the work itself.
 
 For every problem in the assignment, return one result:
@@ -80,7 +88,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const { data: problems } = await locals.supabase
 		.from('problem')
-		.select('id, label, body, points')
+		.select('id, label, directions, body, points')
 		.eq('assignment_id', assignment.id)
 		.eq('included', true)
 		.order('sort_order');
@@ -127,7 +135,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		`Assignment: ${assignment.title}`,
 		assignment.instructions ? `Instructions given to the student: ${assignment.instructions}` : '',
 		'The problems in this assignment are:',
-		problems.map((p) => `${p.label}. ${p.body}`).join('\n'),
+		problems.map((p) => `${p.label}. ${p.directions ? `(Directions: ${p.directions}) ` : ''}${p.body}`).join('\n'),
 		answerKey
 			? `The teacher's answer key:\n${answerKey}\nGrade against this key.`
 			: answerFor.size

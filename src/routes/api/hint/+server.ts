@@ -4,6 +4,10 @@ import { supabaseAdmin } from '$lib/server/supabaseAdmin';
 import { filesToImageParts } from '$lib/server/vision';
 import type { RequestHandler } from './$types';
 
+/** A problem as the student reads it: the directions its run shares, then its own text. */
+const withDirections = (p: { directions: string | null; body: string }) =>
+	p.directions ? `(Directions: ${p.directions}) ${p.body}` : p.body;
+
 const SYSTEM = `You are a patient tutor helping a homeschool student who is stuck on a
 problem they are working by hand on paper.
 
@@ -50,7 +54,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const { data: problems } = await locals.supabase
 		.from('problem')
-		.select('id, label, body')
+		.select('id, label, directions, body')
 		.eq('assignment_id', assignment.id)
 		.eq('included', true)
 		.order('sort_order');
@@ -76,8 +80,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const context = [
 		`Assignment: ${assignment.title}`,
 		target
-			? `The student says they are working on problem ${target.label}:\n${target.body}`
-			: `The student did not say which problem they are on. Work out which one from the photo. The problems in this set are:\n${(problems ?? []).map((p) => `${p.label}. ${p.body}`).join('\n')}`,
+			? `The student says they are working on problem ${target.label}:\n${withDirections(target)}`
+			: `The student did not say which problem they are on. Work out which one from the photo — on the printed sheet, their work is in the space below the problem. The problems in this set are:\n${(problems ?? []).map((p) => `${p.label}. ${withDirections(p)}`).join('\n')}`,
 		targetAnswer
 			? `The correct answer is "${targetAnswer}" — use it to judge whether they are on track, but never reveal it.`
 			: '',

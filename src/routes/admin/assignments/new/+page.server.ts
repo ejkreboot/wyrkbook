@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { weekStart } from '$lib/week';
+import { workLines } from '$lib/workSpace';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
@@ -17,9 +18,9 @@ export const actions: Actions = {
 		const instructions = String(form.get('instructions') ?? '').trim() || null;
 		const week = String(form.get('week_start') ?? '') || null;
 		const hintPenalty = Number(form.get('hint_penalty') ?? 5);
-		const workPages = Number(form.get('work_pages') ?? 4);
+		const workPages = Number(form.get('work_pages') ?? 0);
 
-		let problems: { label: string; section?: string; body: string }[] = [];
+		let problems: { label: string; section?: string; directions?: string; body: string; work_lines?: unknown }[] = [];
 		try {
 			problems = JSON.parse(String(form.get('problems') ?? '[]'));
 		} catch {
@@ -41,7 +42,7 @@ export const actions: Actions = {
 				instructions,
 				week_start: week,
 				hint_penalty: Number.isFinite(hintPenalty) ? hintPenalty : 5,
-				work_pages: Number.isFinite(workPages) ? Math.min(Math.max(workPages, 0), 20) : 4,
+				work_pages: Number.isFinite(workPages) ? Math.min(Math.max(workPages, 0), 20) : 0,
 				created_by: locals.profile!.id
 			})
 			.select()
@@ -55,7 +56,9 @@ export const actions: Actions = {
 				assignment_id: assignment.id,
 				label: String(p.label ?? i + 1).slice(0, 24),
 				section: String(p.section ?? '').trim().slice(0, 120) || null,
+				directions: String(p.directions ?? '').trim().slice(0, 1000) || null,
 				body: String(p.body ?? '').trim(),
+				work_lines: workLines(p.work_lines),
 				sort_order: i
 			}))
 		);

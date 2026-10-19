@@ -1,6 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import { anthropicClient, imageMessage, MODEL, textOf } from '$lib/server/anthropic';
 import { filesToImageParts, parseJSON } from '$lib/server/vision';
+import { WORK_SPACE_GUIDANCE } from '$lib/server/workSpacePrompt';
+import { workLines } from '$lib/workSpace';
 import type { RequestHandler } from './$types';
 
 const SCHEMA = {
@@ -15,9 +17,11 @@ const SCHEMA = {
 				properties: {
 					label: { type: 'string' },
 					section: { type: 'string' },
-					body: { type: 'string' }
+					directions: { type: 'string' },
+					body: { type: 'string' },
+					work_lines: { type: 'integer' }
 				},
-				required: ['label', 'section', 'body'],
+				required: ['label', 'section', 'directions', 'body', 'work_lines'],
 				additionalProperties: false
 			}
 		}
@@ -47,16 +51,24 @@ Transcribe every numbered exercise into structured form.
   \`Simplify $\\frac{x^2 - 9}{x + 3}$.\` Ordinary numbers and money in prose stay
   as they are, and a literal dollar sign is written \`\\$\`.
 - Otherwise the body is plain text: no Markdown, no bold, no bullet characters.
-- If a shared instruction line governs a run of exercises ("Solve for x."), put it
-  in \`instructions\` rather than repeating it into every body.
+- \`directions\` is the instruction line that governs a run of exercises, word for
+  word as printed ("Solve for x.", "Simplify each expression. Assume no variable
+  is zero."), or an empty string if the exercise has none of its own. Every
+  exercise in the run gets the same \`directions\`; it is printed once, above the
+  first of them, so never repeat it into a body. Where the book gives an
+  exercise its own instruction ("Graph the line."), that is part of its body.
+  Math in directions is KaTeX, as in a body: "Solve for $x$."
+- \`instructions\` is for anything that covers the whole set rather than a run of
+  it. Usually it is an empty string.
 - If an exercise depends on a figure, diagram or table you cannot reproduce as
   text, still include it and end the body with "[refer to the diagram in the book]".
 - Skip worked examples, page numbers and answer keys. Headings go in \`section\`
   only, never in a body.
+- ${WORK_SPACE_GUIDANCE.replace(/\n/g, '\n  ')}
 - \`title\` is a short name for the set, e.g. "Section 4.2 — Exercises 1-20".
 
-Transcribe what is printed. Do not solve the problems, and do not invent exercises
-that are not visible in the photos.`;
+Transcribe what is printed. Do not write out solutions, and do not invent
+exercises that are not visible in the photos.`;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!locals.profile || !['admin', 'sysadmin'].includes(locals.profile.role)) {
@@ -85,7 +97,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const parsed = parseJSON<{
 		title: string;
 		instructions: string;
-		problems: { label: string; section: string; body: string }[];
+		problems: { label: string; section: string; directions: string; body: string; work_lines: number }[];
 	}>(textOf(response.content));
 
 	return json({
@@ -94,7 +106,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		problems: (parsed.problems ?? []).map((p, i) => ({
 			label: String(p.label ?? i + 1),
 			section: String(p.section ?? '').trim(),
+			directions: String(p.directions ?? '').trim(),
 			body: String(p.body ?? '').trim(),
+			work_lines: workLines(p.work_lines),
 			sort_order: i
 		}))
 	});

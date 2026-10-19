@@ -80,6 +80,10 @@ export type Problem = {
 	body: string;
 	/** The heading it is printed under in the book, e.g. "Mixed Review". See migration 013. */
 	section: string | null;
+	/** The instruction line its run of problems shares, e.g. "Solve for x." See migration 014. */
+	directions: string | null;
+	/** Lines of room to work it, printed below it; null prints DEFAULT_WORK_LINES. See migration 014. */
+	work_lines: number | null;
 	points: number;
 	included: boolean;
 	sort_order: number;

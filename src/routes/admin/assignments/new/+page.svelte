@@ -3,10 +3,11 @@
 	import { shrinkImage, UPLOAD_BUDGET } from '$lib/shrinkImage';
 	import ProblemText from '$lib/components/ProblemText.svelte';
 	import PhoneCapture from '$lib/components/PhoneCapture.svelte';
+	import { DEFAULT_WORK_LINES, MAX_WORK_LINES } from '$lib/workSpace';
 
 	let { data, form } = $props();
 
-	type Draft = { label: string; section: string; body: string };
+	type Draft = { label: string; section: string; directions: string; body: string; work_lines: number | null };
 
 	const MAX_PAGES = 8;
 
@@ -32,7 +33,7 @@
 	let classId = $state(seed.presetClass || '');
 	let week = $state(seed.presetWeek);
 	let hintPenalty = $state(5);
-	let workPages = $state(4);
+	let workPages = $state(0);
 
 	const weekOptions = $derived(
 		Array.from({ length: 9 }, (_, i) => addWeeks(data.presetWeek, i - 2))
@@ -103,7 +104,13 @@
 	function addProblem() {
 		problems = [
 			...problems,
-			{ label: String(problems.length + 1), section: problems.at(-1)?.section ?? '', body: '' }
+			{
+				label: String(problems.length + 1),
+				section: problems.at(-1)?.section ?? '',
+				directions: problems.at(-1)?.directions ?? '',
+				body: '',
+				work_lines: DEFAULT_WORK_LINES
+			}
 		];
 	}
 </script>
@@ -219,7 +226,7 @@
 				<div class="field">
 					<label for="instructions">Instructions</label>
 					<textarea id="instructions" name="instructions" bind:value={instructions}></textarea>
-					<span class="hint">Printed at the top of the sheet, above the problems.</span>
+					<span class="hint">Printed at the top of the sheet, for the whole set. Directions for a run of problems print above that run.</span>
 				</div>
 
 				<div class="inline-form">
@@ -229,9 +236,9 @@
 						<span class="hint">Percentage points off per hint.</span>
 					</div>
 					<div class="field">
-						<label for="pages">Blank work pages</label>
+						<label for="pages">Extra ruled pages</label>
 						<input id="pages" name="work_pages" type="number" min="0" max="20" step="1" bind:value={workPages} />
-						<span class="hint">Ruled pages printed after the problems.</span>
+						<span class="hint">Each problem has its own work space; these are for overflow.</span>
 					</div>
 				</div>
 			</div>
@@ -242,6 +249,7 @@
 					<span class="card-note">Delete anything you don't want to assign.</span>
 				</div>
 				<p class="hint" style="margin-bottom:.75rem">
+					<strong>Lines</strong> is the room printed below each problem to work it, sized by the AI.
 					Once it's saved, <strong>Trim</strong> in the editor can cut the repetition out for you.
 				</p>
 
@@ -250,13 +258,29 @@
 						{#if p.section && p.section !== problems[i - 1]?.section}
 							<li class="problem-section">{p.section}</li>
 						{/if}
+						{#if p.directions && (p.directions !== problems[i - 1]?.directions || p.section !== problems[i - 1]?.section)}
+							<li class="problem-directions"><ProblemText body={p.directions} /></li>
+						{/if}
 						<li class="problem">
-							<input
-								class="problem-label"
-								style="width:3.2rem;min-height:32px;padding:.2rem .3rem"
-								bind:value={p.label}
-								aria-label="Problem number"
-							/>
+							<div class="problem-meta">
+								<input
+									class="problem-label"
+									style="width:3.2rem;min-height:32px;padding:.2rem .3rem"
+									bind:value={p.label}
+									aria-label="Problem number"
+								/>
+								<input
+									class="problem-lines"
+									type="number"
+									min="0"
+									max={MAX_WORK_LINES}
+									bind:value={p.work_lines}
+									placeholder={String(DEFAULT_WORK_LINES)}
+									aria-label="Lines of work space for problem {p.label}"
+									title="Lines of work space printed below the problem"
+								/>
+								<span class="problem-lines-unit">lines</span>
+							</div>
 							<div class="problem-body">
 								<textarea bind:value={p.body} aria-label="Problem {p.label}"></textarea>
 								{#if p.body.includes('$')}

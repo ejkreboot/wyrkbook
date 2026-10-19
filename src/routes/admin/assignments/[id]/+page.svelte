@@ -9,6 +9,7 @@
 		trimLevelInfo,
 		type TrimLevel
 	} from '$lib/trimLevels';
+	import { DEFAULT_WORK_LINES, MAX_WORK_LINES } from '$lib/workSpace';
 
 	let { data, form } = $props();
 
@@ -23,7 +24,9 @@
 		id: string | null;
 		label: string;
 		section: string;
+		directions: string;
 		body: string;
+		work_lines: number | null;
 		answer: string;
 		points: number;
 		included: boolean;
@@ -41,7 +44,9 @@
 				id: p.id,
 				label: p.label,
 				section: p.section ?? '',
+				directions: p.directions ?? '',
 				body: p.body,
+				work_lines: p.work_lines,
 				answer: p.answer ?? '',
 				points: Number(p.points ?? 1),
 				included: p.included,
@@ -63,7 +68,9 @@
 				id: null,
 				label: String(rows.length + 1),
 				section: rows.at(-1)?.section ?? '',
+				directions: rows.at(-1)?.directions ?? '',
 				body: '',
+				work_lines: null,
 				answer: '',
 				points: 1,
 				included: true,
@@ -152,6 +159,45 @@
 			trimError = 'The request failed. Check your connection and try again.';
 		} finally {
 			trimming = false;
+		}
+	}
+
+	// --- work space ---------------------------------------------------------------
+
+	let sizing = $state(false);
+	let sizeError = $state('');
+	let sized = $state(false);
+	const unsized = $derived(rows.filter((r) => r.included && r.work_lines == null).length);
+
+	/** Asks the AI how much room each problem needs; fills in the lines, unsaved. */
+	async function sizeWorkSpace() {
+		const sent = stamp;
+		sizing = true;
+		sizeError = '';
+		try {
+			const res = await fetch('/api/work-space', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					assignment_id: a.id,
+					problems: rows.map((r) => ({ label: r.label, directions: r.directions, body: r.body }))
+				})
+			});
+			if (!res.ok) {
+				sizeError = tidyError(await res.text(), res.status);
+				return;
+			}
+			const result: { lines: number[] } = await res.json();
+			if (stamp !== sent) {
+				sizeError = 'The list changed while it was being sized. Try again.';
+				return;
+			}
+			rows = rows.map((r, i) => ({ ...r, work_lines: result.lines[i] ?? r.work_lines }));
+			sized = true;
+		} catch {
+			sizeError = 'The request failed. Check your connection and try again.';
+		} finally {
+			sizing = false;
 		}
 	}
 
@@ -254,8 +300,9 @@
 					<input id="pen" name="hint_penalty" type="number" min="0" max="100" value={a.hint_penalty} />
 				</div>
 				<div class="field">
-					<label for="pages">Blank work pages</label>
+					<label for="pages">Extra ruled pages</label>
 					<input id="pages" name="work_pages" type="number" min="0" max="20" value={a.work_pages} />
+					<span class="hint">For overflow: each problem prints with its own work space.</span>
 				</div>
 			</div>
 		</div>
@@ -345,13 +392,37 @@
 			</div>
 			<p class="hint" style="margin-bottom:.75rem">
 				Uncheck anything extraneous — unchecked problems are never printed, never shown to
-				students, and never graded.
+				students, and never graded. <strong>Lines</strong> is the room printed below each problem to
+				work it.
 			</p>
+
+			<div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center;margin-bottom:.75rem">
+				<button class="btn btn-sm" type="button" onclick={sizeWorkSpace} disabled={sizing || !rows.length}>
+					{#if sizing}
+						<span class="spinner"></span> Working out the room each needs…
+					{:else}
+						Size work space with AI
+					{/if}
+				</button>
+				{#if sized && !sizing}
+					<span class="small">Sized — not saved yet. <em>Save changes</em> to keep it.</span>
+				{:else if unsized && !sizing}
+					<span class="muted small">
+						{unsized} problem{unsized === 1 ? '' : 's'} not sized yet; {unsized === 1 ? 'it prints' : 'they print'} with {DEFAULT_WORK_LINES} lines.
+					</span>
+				{/if}
+			</div>
+			{#if sizeError}
+				<div class="alert alert-bad" role="alert" style="margin-bottom:.75rem">{sizeError}</div>
+			{/if}
 
 			<ul class="problem-list">
 				{#each rows as r, i (i)}
 					{#if r.section && r.section !== rows[i - 1]?.section}
 						<li class="problem-section">{r.section}</li>
+					{/if}
+					{#if r.directions && (r.directions !== rows[i - 1]?.directions || r.section !== rows[i - 1]?.section)}
+						<li class="problem-directions"><ProblemText body={r.directions} /></li>
 					{/if}
 					<li class="problem {r.included ? '' : 'is-excluded'}">
 						<div style="display:flex;flex-direction:column;gap:.3rem;align-items:center">
@@ -367,6 +438,17 @@
 								bind:value={r.label}
 								aria-label="Problem number"
 							/>
+							<input
+								class="problem-lines"
+								type="number"
+								min="0"
+								max={MAX_WORK_LINES}
+								bind:value={r.work_lines}
+								placeholder={String(DEFAULT_WORK_LINES)}
+								aria-label="Lines of work space for problem {r.label}"
+								title="Lines of work space printed below the problem"
+							/>
+							<span class="problem-lines-unit">lines</span>
 							{#if r.trim?.review}<span class="badge badge-accent" title="Reviews earlier material">review</span>{/if}
 						</div>
 
@@ -393,6 +475,11 @@
 										<input id="sec-{i}" bind:value={r.section} placeholder="e.g. Mixed Review" />
 									</div>
 								</div>
+								<div class="field" style="margin-top:.4rem">
+									<label for="dir-{i}">Directions</label>
+									<input id="dir-{i}" bind:value={r.directions} placeholder="e.g. Solve for $x$." />
+									<span class="hint">Printed once above a run of problems with the same directions.</span>
+								</div>
 							{/if}
 						</div>
 
@@ -408,7 +495,7 @@
 			<div class="btn-row" style="margin-top:.75rem">
 				<button class="btn btn-sm" type="button" onclick={addRow}>+ Add a problem</button>
 				<button class="btn btn-sm" type="button" onclick={() => (showAnswers = !showAnswers)}>
-					{showAnswers ? 'Hide' : 'Show'} answers, points &amp; sections
+					{showAnswers ? 'Hide' : 'Show'} answers, points, sections &amp; directions
 				</button>
 			</div>
 		</div>

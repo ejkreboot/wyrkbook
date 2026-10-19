@@ -225,8 +225,8 @@
 			<div>
 				<h2 style="margin-bottom:.25rem">Turn in your work</h2>
 				<p class="muted small" style="margin:0">
-					Photograph every page you wrote on, in order. Make sure the problem numbers in the left
-					margin are readable.
+					Photograph every page you wrote on, in order — the problem sheet, and any extra ruled
+					pages. On ruled pages, make sure the problem numbers in the left margin are readable.
 				</p>
 			</div>
 

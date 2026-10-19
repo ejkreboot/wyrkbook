@@ -511,6 +511,14 @@ tbody tr:hover { background: var(--paper-2); }
 }
 .problem-section:first-child { margin-top: 0; }
 
+/* The directions a run of problems shares ("Solve for x."), above the first of them. */
+.problem-directions { font-size: .88rem; font-style: italic; color: var(--ink-2); margin: .2rem 0 -.1rem; }
+
+/* A problem's number, with the lines of work space printed below it. */
+.problem-meta { flex: none; display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+input.problem-lines { width: 3.2rem; min-height: 28px; padding: .1rem .25rem; font-size: .8rem; text-align: center; }
+.problem-lines-unit { font-size: .7rem; color: var(--ink-3); margin-top: -.25rem; }
+
 /* What the trimmer said about a problem. */
 .trim-note { font-size: .8rem; color: var(--ink-3); font-style: italic; margin-top: .3rem; }
 
@@ -999,10 +1007,13 @@ tbody tr:hover { background: var(--paper-2); }
 
 /* --- problems: the book's own labels, not the list's numbering --- */
 .print-problems { list-style: none; margin: 0; padding: 0; }
-.print-problems li {
-	display: flex; gap: 4mm;
-	margin-bottom: 3.5mm;
-}
+.print-problems .pitem { margin-bottom: 3.5mm; }
+.print-problems .pline { display: flex; gap: 4mm; }
+/* Room to work the problem, sized per problem (problem.work_lines). The rule
+   under it closes the problem's space, so work above it is plainly this one's. */
+.print-problems .pspace { border-bottom: .5pt solid #ccc; }
+/* Directions shared by a run of problems, printed above the first of them. */
+.print-problems .pdirections { font-style: italic; margin: 0 0 2.5mm; }
 .print-problems .plabel {
 	flex: none; min-width: 9mm;
 	font-weight: 700; font-variant-numeric: tabular-nums;
@@ -1017,8 +1028,8 @@ tbody tr:hover { background: var(--paper-2); }
 
 /* ============================================================================
    PRINT — the assignment sheet.
-   Page 1+ hold the problems; a run of blank ruled pages follows so the student
-   has room to work. Rule spacing is 9mm, close to college-ruled paper.
+   Each problem is followed by room to work it; any extra ruled pages follow for
+   overflow. Rule spacing is 8.4mm, close to college-ruled paper.
    ========================================================================= */
 
 @media print {
@@ -1041,7 +1052,9 @@ tbody tr:hover { background: var(--paper-2); }
 	.sheet-head h1 { font-size: 16pt; }
 	.sheet-meta { font-size: 9.5pt; color: #333; }
 	.sheet-instructions { font-size: 10.5pt; }
-	.print-problems li { break-inside: avoid; page-break-inside: avoid; }
+	/* A problem and its work space stay on one page; directions stay with the problem after them. */
+	.print-problems .pitem { break-inside: avoid; page-break-inside: avoid; }
+	.print-problems .pdirections { font-size: 10.5pt; break-after: avoid; page-break-after: avoid; }
 	.print-problems .psection { font-size: 9.5pt; break-after: avoid; page-break-after: avoid; }
 
 	/* --- ruled work pages --- */

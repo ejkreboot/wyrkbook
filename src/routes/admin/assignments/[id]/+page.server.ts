@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { addWeeks, weekStart } from '$lib/week';
+import { workLines } from '$lib/workSpace';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -58,7 +59,7 @@ export const actions: Actions = {
 			class_id: String(form.get('class_id') ?? ''),
 			week_start: String(form.get('week_start') ?? '') || null,
 			hint_penalty: Number(form.get('hint_penalty') ?? 5),
-			work_pages: Math.min(Math.max(Number(form.get('work_pages') ?? 4), 0), 20)
+			work_pages: Math.min(Math.max(Number(form.get('work_pages') ?? 0), 0), 20)
 		};
 
 		if (!patch.title) return fail(400, { message: 'Give the assignment a title.' });
@@ -83,7 +84,9 @@ export const actions: Actions = {
 			id: string;
 			label: string;
 			section: string | null;
+			directions: string | null;
 			body: string;
+			work_lines: unknown;
 			answer: string | null;
 			points: number;
 			included: boolean;
@@ -105,7 +108,9 @@ export const actions: Actions = {
 				assignment_id: params.id,
 				label: String(p.label ?? i + 1).slice(0, 24),
 				section: String(p.section ?? '').trim().slice(0, 120) || null,
+				directions: String(p.directions ?? '').trim().slice(0, 1000) || null,
 				body: String(p.body ?? '').trim(),
+				work_lines: workLines(p.work_lines),
 				points: Number.isFinite(Number(p.points)) ? Number(p.points) : 1,
 				included: p.included !== false,
 				sort_order: i
