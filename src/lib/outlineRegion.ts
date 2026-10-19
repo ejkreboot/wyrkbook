@@ -9,6 +9,8 @@
  * at its end as after it: typing on from the closing `:::` is new material, not
  * part of the outline.
  */
+import { topBlocks } from './markdown.ts';
+
 export type Region = { start: number; end: number };
 
 export function followEdit(r: Region, before: string, after: string): Region & { touched: boolean } {
@@ -32,6 +34,27 @@ export function followEdit(r: Region, before: string, after: string): Region & {
 			: r.start < p && p < r.end; // a pure insertion strictly inside it
 
 	return { start, end: Math.max(start, end), touched };
+}
+
+/**
+ * Where a region lands when the whole body is rewritten without changing what
+ * it says — the editor writing a body out its own way, which touches every
+ * block and so is no one edit that `followEdit` could follow. The rewrite keeps
+ * the top-level blocks, in order, so the region becomes the same blocks in the
+ * new text: every block it overlapped, whole. Null when the blocks don't line up.
+ */
+export function remapRegion(r: Region, before: string, after: string): Region | null {
+	const was = topBlocks(before);
+	const now = topBlocks(after);
+	if (was.length !== now.length) return null;
+	const first = was.findIndex((b) => b.end > r.start);
+	const last = was.findLastIndex((b) => b.start < r.end);
+	if (first === -1 || last < first) {
+		// Empty, or between blocks: it stays in front of the same block.
+		const at = first === -1 ? after.length : now[first].start;
+		return { start: at, end: at };
+	}
+	return { start: now[first].start, end: now[last].end };
 }
 
 /** Where lines continuing an outline go: the start of its closing `:::` line, or -1 if it has none. */

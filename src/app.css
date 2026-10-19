@@ -254,8 +254,19 @@ select, textarea {
 	border-radius: var(--radius-sm);
 }
 textarea { min-height: 90px; resize: vertical; line-height: 1.45; }
+/* Our own chevron in place of the browser's, which sits hard against the right
+   edge and which padding cannot move in Safari. Colour is --ink-2. */
+select {
+	appearance: none;
+	padding-right: 2.25rem;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2357503f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right .8rem center;
+	background-size: 12px 8px;
+}
+select[multiple], select[size]:not([size='1']) { padding-right: .65rem; background-image: none; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
-input[disabled], textarea[disabled], select[disabled] { background: var(--paper-2); color: var(--ink-3); }
+input[disabled], textarea[disabled], select[disabled] { background-color: var(--paper-2); color: var(--ink-3); }
 
 .otp-input {
 	font-family: var(--mono); font-size: 1.5rem; letter-spacing: .4em;
@@ -596,7 +607,11 @@ tbody tr:hover { background: var(--paper-2); }
 	border-radius: var(--radius);
 	box-shadow: var(--shadow);
 }
-.plan-head, .save-bar.is-sticky { position: sticky; top: 56px; z-index: 20; margin-bottom: .75rem; }
+/* Pinned below the sticky chrome: the 56px topbar, and the 47px nav under it
+   when the page has one — else the nav, drawn over it, hides all but its foot. */
+.app { --chrome-h: 56px; }
+.app:has(> .nav) { --chrome-h: 103px; }
+.plan-head, .save-bar.is-sticky { position: sticky; top: var(--chrome-h); z-index: 20; margin-bottom: .75rem; }
 
 /* Paired with a disabled Save button, so the dot is a reason rather than an
    alarm — a steady mark in the accent colour, not a blinking one. */
@@ -802,68 +817,83 @@ tbody tr:hover { background: var(--paper-2); }
 .cur-bar select { width: auto; flex: 0 1 auto; }
 
 .cur-toolbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
-.cur-format { display: flex; gap: .25rem; flex-wrap: wrap; }
-.cur-format .btn { min-width: 34px; font-family: var(--mono); }
-.cur-note-btn { color: var(--note); border-color: color-mix(in srgb, var(--note) 35%, white); }
 .cur-notes-toggle { margin-left: auto; align-items: center; color: var(--note); font-weight: 600; }
 
 .cur-editor { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
-.cur-edit { padding: 0; overflow: hidden; }
+.cur-edit { padding: 0; overflow: clip; } /* clip, not hidden: hidden would stop the editor's top bar sticking */
 .cur-edit[hidden] { display: none; }
 
-/* The live editor ($lib/editor/live): the Markdown itself, dressed to read like
-   the rendered page. Syntax the cursor is in shows faint; the rest is hidden or
-   drawn. Sizes follow .md below so a lecture looks the same in both modes. */
-.cur-live { --cm-pad: 1.5rem; }
-.cur-live .cm-editor { min-height: 70vh; background: transparent; }
-.cur-live.is-readonly .cm-content { opacity: .75; }
-.cur-live .cm-placeholder { color: var(--ink-3); }
-.cur-live .cm-md-syntax { color: var(--ink-3); font-weight: 400; font-style: normal; }
-.cur-live .cm-md-h { font-weight: 700; line-height: 1.3; }
-.cur-live .cm-md-h1 { font-size: 1.45rem; padding-top: .5em !important; }
-.cur-live .cm-md-h2 { font-size: 1.2rem; padding-top: .4em !important; }
-.cur-live .cm-md-h3 { font-size: 1.05rem; }
-.cur-live .cm-md-h4 { color: var(--ink-2); }
-.cur-live .cm-md-em { font-style: italic; }
-.cur-live .cm-md-strong { font-weight: 700; }
-.cur-live .cm-md-strike { text-decoration: line-through; }
-.cur-live .cm-md-code { background: var(--paper-2); border-radius: 4px; }
-.cur-live .cm-md-link { color: var(--accent); }
-.cur-live .cm-md-pre { background: var(--paper-2); }
-.cur-live .cm-md-math-src,
-.cur-live .cm-md-math-lines { color: var(--ink-2); background: color-mix(in srgb, var(--paper-2) 60%, transparent); }
-.cur-live .cm-md-math { cursor: text; }
-.cur-live .cm-md-figure { padding: .2em var(--cm-pad); cursor: pointer; font-family: var(--mono); }
-.cur-live .cm-md-figure .math-block,
-.cur-live .cm-md-figure .graph-wrap { margin: 0; }
-.cur-live .cm-md-figure:hover { background: var(--paper-2); }
-.cur-live .cm-md-preview { cursor: default; border-left: 3px solid var(--line); margin-left: var(--cm-pad); padding-left: 1ch; }
-.cur-live .cm-md-preview:hover { background: none; }
-.cur-live .cm-md-note { color: var(--note); font-weight: 400; }
-.cur-live .cm-md-blank { color: var(--note); border-bottom: 1px solid var(--ink); }
-/* A writing space: never shown as syntax. The answer is typed in place, and
-   the space it sits in grows and shrinks with Enter and Backspace
-   ($lib/editor/space). Sized like .md .write — n lines of 1.9em, the answer's
-   own line included — with the faint rule showing how far it runs. */
-.cur-live .cm-md-space-start { display: block; height: .25em; }
-.cur-live .cm-md-write { color: var(--note); padding-left: 1ch; }
-.cur-live .cm-md-space-rest {
-	display: block; position: relative; cursor: text; text-indent: 0;
-	height: max(.3em, calc(var(--lines) * 1.9em - 1.6em));
+/* The editor (Milkdown's Crepe, $lib/editor/milkdown). Its surface carries the
+   reader's .md class, so notes, blanks, outlines and graphs are styled by the
+   rules below; this puts back the reader's type over Crepe's own, so a lecture
+   looks the same in both modes. Room on the left for Crepe's block handle. */
+.cur-milkdown .milkdown {
+	--crepe-color-background: var(--card);
+	--crepe-color-on-background: var(--ink);
+	--crepe-color-surface: var(--paper);
+	--crepe-color-surface-low: var(--paper-2);
+	--crepe-color-on-surface: var(--ink);
+	--crepe-color-on-surface-variant: var(--ink-2);
+	--crepe-color-outline: var(--ink-3); /* also its icons */
+	--crepe-color-primary: var(--accent);
+	--crepe-color-secondary: var(--accent-soft);
+	--crepe-color-on-secondary: var(--ink);
+	--crepe-color-inline-code: var(--ink);
+	--crepe-color-error: var(--bad);
+	--crepe-color-hover: var(--paper-2);
+	--crepe-color-selected: var(--accent-soft);
+	--crepe-color-inline-area: var(--paper-2);
+	--crepe-font-title: var(--mono);
+	--crepe-font-default: var(--mono);
+	--crepe-font-code: var(--mono);
+	--crepe-base-font-size: .92rem;
 }
-.cur-live .cm-md-space-rest::before {
-	content: ''; position: absolute; left: 0; bottom: 0; top: -1.6em;
-	border-left: 2px solid var(--line); pointer-events: none;
+/* Crepe's top bar stays in view, under the page's sticky chrome and title bar (--bar-h, measured by the page). */
+.cur-milkdown .milkdown .milkdown-top-bar {
+	top: calc(var(--chrome-h, 0px) + var(--bar-h, 0px));
+	background: var(--card);
+	border-bottom-color: var(--line);
+	padding: 0 .5rem;
+	min-height: 40px;
 }
-.cur-live .cm-md-space-rest:hover { background: var(--paper-2); }
-.cur-live .cm-md-marker { color: var(--ink-2); }
-.cur-live .cm-md-omarker { font-weight: 700; color: var(--ink); }
-.cur-live .cm-md-marker.cm-md-note { color: var(--note); }
-.cur-live .cm-md-in-outline { box-shadow: inset 3px 0 var(--line); }
-.cur-live .cm-md-fence { box-shadow: inset 3px 0 var(--line); }
-.cur-live .cm-md-fence-label {
-	font-size: .72em; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+.cur-milkdown .milkdown .milkdown-top-bar .top-bar-item { margin: 4px 1px; }
+.cur-milkdown .milkdown .milkdown-top-bar .top-bar-divider { margin: 8px 5px; height: 20px; }
+.cur-milkdown .milkdown .milkdown-top-bar .top-bar-heading-selector { padding: 4px 2px; }
+.cur-milkdown .milkdown > .ProseMirror { padding: 1.25rem 1.5rem 1.25rem 5.5rem; min-height: 70vh; line-height: 1.6; }
+.cur-milkdown.is-readonly .milkdown > .ProseMirror { opacity: .75; }
+.cur-milkdown .milkdown > .ProseMirror :is(h1, h2, h3, h4, h5, h6) { font-family: var(--mono); font-weight: 700; line-height: 1.3; margin: 1.4em 0 .5em; padding: 0; }
+.cur-milkdown .milkdown > .ProseMirror > :first-child { margin-top: 0; }
+.cur-milkdown .milkdown > .ProseMirror h1 { font-size: 1.45rem; }
+.cur-milkdown .milkdown > .ProseMirror h2 { font-size: 1.2rem; border-bottom: 1px solid var(--line); padding-bottom: .2em; }
+.cur-milkdown .milkdown > .ProseMirror h3 { font-size: 1.05rem; }
+.cur-milkdown .milkdown > .ProseMirror :is(h4, h5, h6) { font-size: .95rem; color: var(--ink-2); }
+.cur-milkdown .milkdown > .ProseMirror p { line-height: 1.6; padding: 0; margin: 0 0 .9em; }
+.cur-milkdown .milkdown > .ProseMirror li > p { margin: 0; }
+.cur-milkdown .milkdown > .ProseMirror :is(ul, ol) { padding-left: 1.6em; margin: 0 0 .9em; }
+.cur-milkdown .milkdown > .ProseMirror li > :is(ul, ol) { margin: .2em 0 0; }
+.cur-milkdown .milkdown > .ProseMirror li + li { margin-top: .2em; }
+.cur-milkdown .milkdown > .ProseMirror blockquote { border-left: 3px solid var(--line-strong); padding-left: .9em; color: var(--ink-2); margin: 0 0 .9em; }
+.cur-milkdown .milkdown > .ProseMirror code { background: var(--paper-2); padding: .1em .3em; border-radius: 4px; font-size: .95em; }
+/* An outline in the editor: its lists marked I. a. 1. by the .md .outline rules. */
+.cur-milkdown .milkdown > .ProseMirror .outline { margin: 0 0 .9em; }
+.cur-milkdown .milkdown > .ProseMirror .outline :is(ul, ol) { margin-bottom: 0; }
+.cur-milkdown .milkdown > .ProseMirror .outline > :is(ol, ul) { padding-left: 2.8em; }
+/* A writing space's answer is labelled with how many lines it will get. */
+.cur-milkdown .milkdown > .ProseMirror .write::after {
+	content: attr(data-lines) ' lines'; float: right; margin-right: .5em;
+	font-family: var(--sans); font-size: .7rem; color: var(--ink-3);
 }
+.cur-milkdown .milkdown > .ProseMirror .write[data-lines="1"]::after { content: '1 line'; }
+.cur-milkdown .milkdown .milkdown-code-block .preview-panel .graph-wrap { margin: 0; }
+/* Crepe dresses code blocks — math and graph sources among them — in CodeMirror's
+   One Dark; on this light page its pale text and dark gutter want lightening. */
+.cur-milkdown .milkdown .milkdown-code-block .cm-editor { color: var(--ink); background: transparent; }
+.cur-milkdown .milkdown .milkdown-code-block .cm-editor .cm-gutters { background: transparent; color: var(--ink-3); border: 0; }
+.cur-milkdown .milkdown .milkdown-code-block .cm-editor .cm-activeLine,
+.cur-milkdown .milkdown .milkdown-code-block .cm-editor .cm-activeLineGutter { background: color-mix(in srgb, var(--paper-2) 70%, transparent); color: var(--ink-2); }
+.cur-milkdown .milkdown .milkdown-code-block .cm-editor .cm-cursor { border-left-color: var(--ink); }
+.cur-milkdown .milkdown .milkdown-code-block .cm-editor .cm-selectionBackground,
+.cur-milkdown .milkdown .milkdown-code-block .cm-editor.cm-focused .cm-selectionBackground { background: var(--accent-soft); }
 .cur-preview { padding: 1.25rem 1.5rem; }
 
 /* Rendered Markdown. Fixed-width by request — lecture notes are read the way
@@ -879,6 +909,8 @@ tbody tr:hover { background: var(--paper-2); }
 .md p, .md ul, .md ol, .md blockquote, .md pre, .md table { margin: 0 0 .9em; }
 .md ul, .md ol { padding-left: 1.6em; }
 .md li + li { margin-top: .2em; }
+/* A line left empty in the editor ($lib/markdown emptyLines): a line's worth of space. */
+.md p.empty-line { min-height: 1.6em; }
 .md blockquote { border-left: 3px solid var(--line-strong); padding-left: .9em; color: var(--ink-2); }
 .md code { background: var(--paper-2); padding: .1em .3em; border-radius: 4px; font-size: .95em; }
 .md pre { background: var(--paper-2); padding: .8em 1em; border-radius: var(--radius-sm); overflow-x: auto; }
@@ -940,6 +972,8 @@ tbody tr:hover { background: var(--paper-2); }
 .md .outline :is(ol, ul) :is(ol, ul) :is(ol, ul)             { list-style-type: decimal; }
 .md .outline :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) { list-style-type: '– '; }
 .md .outline li > :is(ol, ul) { margin: .2em 0 0; }
+/* An empty line in an item makes its list loose (<p>s in every item); the outline stays as tight as the editor shows it. */
+.md .outline li > p { margin: 0; }
 .md .outline > :is(ol, ul) > li { font-weight: 700; }
 .md .outline > :is(ol, ul) > li > :is(ol, ul, :not(:first-child)) { font-weight: 400; }
 

@@ -264,6 +264,24 @@ const tidyNotes: CoreRule = (state) => {
 	state.tokens = out;
 };
 
+/**
+ * Empty lines. The editor writes a line left empty as a paragraph of just
+ * `<br />`, and an empty table cell the same way; with raw HTML off they would
+ * print as text. The paragraph becomes a line of space — on the handout too,
+ * where the room is the point — and the cell is left empty.
+ */
+const EMPTY_LINE = /^<br\s*\/?\s*>$/i;
+const emptyLines: CoreRule = (state) => {
+	const tokens = state.tokens;
+	tokens.forEach((t, i) => {
+		if (t.type !== 'inline' || !EMPTY_LINE.test(t.content.trim())) return;
+		t.children = [];
+		if (tokens[i - 1]?.type !== 'paragraph_open') return;
+		tokens[i - 1].hidden = tokens[i + 1].hidden = false; // shown even in a tight list
+		tokens[i - 1].attrJoin('class', 'empty-line');
+	});
+};
+
 function useMath(m: MarkdownIt) {
 	m.inline.ruler.after('escape', 'math_inline', mathInline);
 	m.block.ruler.after('blockquote', 'math_block', mathBlock, {
@@ -281,6 +299,7 @@ useMath(md);
 md.inline.ruler.after('math_inline', 'teacher_note', teacherNote);
 md.inline.ruler.after('teacher_note', 'blank', blank); // ahead of `link`, which would take `[[`
 md.core.ruler.after('inline', 'teacher_notes', tidyNotes);
+md.core.ruler.after('teacher_notes', 'empty_lines', emptyLines);
 
 // Typed on its own: md.use() takes plugin options as any[], which would leave
 // the render callback untyped.
@@ -310,6 +329,26 @@ export function renderMarkdown(src: string, { notes = true }: RenderOptions = {}
 /** One piece of math as KaTeX HTML — for the editor, which renders it in place. */
 export function renderMath(src: string, display: boolean): string {
 	return tex(src, display);
+}
+
+/**
+ * Where each top-level block of a body starts and ends, as offsets into it —
+ * the end before any blank lines after. A block runs on to where the next one
+ * starts: markdown-it's line map for an outline stops short of its closing `:::`.
+ */
+export function topBlocks(src: string): { start: number; end: number }[] {
+	src = src ?? '';
+	const lineStarts = [0];
+	for (let i = 0; i < src.length; i++) if (src[i] === '\n') lineStarts.push(i + 1);
+	const starts = md
+		.parse(src, { notes: true })
+		.filter((t) => t.level === 0 && t.nesting !== -1 && t.map)
+		.map((t) => lineStarts[t.map![0]]);
+	return starts.map((start, i) => {
+		let end = starts[i + 1] ?? src.length;
+		while (end > start && /\s/.test(src[end - 1])) end--;
+		return { start, end };
+	});
 }
 
 /** How many teacher notes a body carries — for the reader's toggle label. */

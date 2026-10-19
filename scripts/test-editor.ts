@@ -1,17 +1,19 @@
 /**
- * Checks the live editor's parser ($lib/editor/syntax) finds the curriculum
- * constructs where markdown-it does. Run with: npm run test:editor
+ * Checks that a body read into the editor and written back out renders the same
+ * as before — the Markdown half of the Milkdown editor ($lib/editor/remark),
+ * without the browser. Run with: npm run test:editor
+ *
+ * The editor goes Markdown → mdast → ProseMirror → mdast → Markdown; this covers
+ * the two ends, which is where our own syntax lives.
  */
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { ensureSyntaxTree } from '@codemirror/language';
-import { EditorState, type StateCommand } from '@codemirror/state';
-import { GFM, parser as base } from '@lezer/markdown';
-import { listMarker } from '../src/lib/editor/markers.ts';
-import { addLine, removeLineAfter, removeLineBefore } from '../src/lib/editor/space.ts';
-import { curriculumSyntax } from '../src/lib/editor/syntax.ts';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import remarkParse from 'remark-parse';
+import remarkStringify from 'remark-stringify';
+import { unified } from 'unified';
+import { prepareMarkdown, remarkCurriculum, stringifyOptions } from '../src/lib/editor/remark.ts';
 import { renderMarkdown } from '../src/lib/markdown.ts';
-
-const parser = base.configure([GFM, curriculumSyntax]);
+import { remapRegion } from '../src/lib/outlineRegion.ts';
 
 let passed = 0;
 let failed = 0;
@@ -19,114 +21,178 @@ let failed = 0;
 function check(name: string, cond: boolean, detail = '') {
 	if (cond) {
 		passed++;
+		console.log(`  PASS  ${name}`);
 	} else {
 		failed++;
-		console.log(`FAIL ${name}${detail ? `\n     ${detail}` : ''}`);
+		console.log(`  FAIL  ${name}${detail ? ` — ${detail}` : ''}`);
 	}
 }
 
-/** Every node of a type, as the source text it covers. */
-function nodes(src: string, type: string): string[] {
-	const found: string[] = [];
-	parser.parse(src).iterate({
-		enter(n) {
-			if (n.name === type) found.push(src.slice(n.from, n.to));
-		}
+const processor = unified()
+	.use(remarkParse)
+	.use(remarkGfm)
+	.use(remarkMath)
+	.use(remarkCurriculum)
+	.use(remarkStringify, stringifyOptions as never);
+
+function roundTrip(src: string): string {
+	const prepared = prepareMarkdown(src);
+	return processor.stringify(processor.runSync(processor.parse(prepared)) as never);
+}
+
+function tree(src: string) {
+	return processor.runSync(processor.parse(prepareMarkdown(src))) as unknown as { children: Node[] };
+}
+type Node = { type: string; value?: string; lines?: number; children?: Node[] };
+const find = (n: Node, type: string): Node[] =>
+	[...(n.type === type ? [n] : []), ...(n.children ?? []).flatMap((c) => find(c, type))];
+
+const CASES: Record<string, string> = {
+	'notes and math': `# Derivatives
+
+The slope of $x^2$ is $2x$. {{ask with $y^{2}}$ in it}}
+
+{{Pause here and draw the graph}}
+
+- Limits {{ask them to guess the **sign** first}}
+- {{only a note}}
+- After`,
+	'blanks': `- Two equations in the same variables form a [[system]].
+- Solution set: [[2: every ordered pair that satisfies both]]
+- Show work: [[4: ]]
+- A note with a blank {{say [[this]] aloud}}`,
+	'outline, closed tight': `Intro paragraph.
+::: outline
+- Limits
+    - Intuition {{draw it}}
+        - Detail
+    - Formal
+- Continuity
+:::
+After.`,
+	'outline, ordered': `::: outline
+1. First
+    1. Sub
+2. Second
+:::`,
+	'unclosed outline': `::: outline
+- Runs to the end
+    - of the document`,
+	'display math variants': `Before
+$$ x = 1 $$
+Middle
+
+$$\\frac{a}{b}
+= c$$
+
+$$
+\\int_0^1 x\\,dx
+$$`,
+	'graph fence': '```graph\nx: -5..5\ny: -5..5\ny = x^2 - 3\n[[point (0, -3) "vertex"]]\n```',
+	'code fence with fence-like lines': '```\n::: outline\n$$ x $$\n```',
+	'literal brackets and dollars': `Interval [0, 1] and {{unclosed and [[ alone. Costs \\$5 and \\$10.
+
+Empty {{}} and [[]] stay as typed.`,
+	'table': `| a | b |
+| - | - |
+| $x$ | [[y]] |`
+};
+
+// KaTeX copies the TeX into an annotation, spaces and all; the math drawn is what matters.
+const rendered = (src: string, notes: boolean) =>
+	renderMarkdown(src, { notes }).replace(/(<annotation[^>]*>)([^<]*)/g, (_, tag, tex) => tag + tex.trim());
+
+console.log('Round trip renders the same (teacher copy and handout)');
+for (const [name, src] of Object.entries(CASES)) {
+	const out = roundTrip(src);
+	for (const notes of [true, false]) {
+		const want = rendered(src, notes);
+		const got = rendered(out, notes);
+		check(`${name} (${notes ? 'teacher' : 'handout'})`, want === got, `\n--- source\n${src}\n--- written\n${out}\n--- want\n${want}\n--- got\n${got}`);
+	}
+	check(`${name}: writing is stable`, roundTrip(out) === out, `\n${out}\n---\n${roundTrip(out)}`);
+}
+
+console.log('Parsed shape');
+{
+	const t = tree(CASES['blanks']);
+	const blanks = find(t as unknown as Node, 'blank');
+	check('four blanks', blanks.length === 4, String(blanks.length));
+	check('fill-in blank has no lines', blanks[0]?.lines === 0);
+	check('writing space keeps its count', blanks[1]?.lines === 2);
+	check('empty writing space', blanks[2]?.lines === 4 && !blanks[2]?.children?.length);
+	check('blank nests in a note', find(find(t as unknown as Node, 'teacherNote')[0], 'blank').length === 1);
+}
+{
+	const t = tree(CASES['outline, closed tight']) as unknown as Node;
+	const outlines = find(t, 'outline');
+	check('one outline', outlines.length === 1);
+	check('outline holds the list', outlines[0]?.children?.[0]?.type === 'list');
+	check('paragraph after the outline stays outside', t.children?.at(-1)?.type === 'paragraph');
+}
+{
+	const t = tree('Note $}}$ inside {{a $x^{2}}$ b}}') as unknown as Node;
+	const notes = find(t, 'teacherNote');
+	check('}} in math neither closes nor opens a note', notes.length === 1 && find(notes[0], 'inlineMath').length === 1);
+}
+{
+	const t = tree(CASES['literal brackets and dollars']) as unknown as Node;
+	check('no notes or blanks from unclosed or empty markers', !find(t, 'teacherNote').length && !find(t, 'blank').length);
+}
+
+{
+	// Milkdown's remarkMarker runs first and tags strong/emphasis with `marker`.
+	function visit(n: Node) {
+		if (n.type === 'strong' || n.type === 'emphasis') (n as Node & { marker: string }).marker = '*';
+		n.children?.forEach(visit);
+	}
+	const tagged = processor.parse('{{a **b** c}}') as unknown as Node;
+	visit(tagged);
+	processor.runSync(tagged as never);
+	check('bold inside a note survives nodes carrying a `marker`', find(tagged, 'strong').length === 1 && find(tagged, 'teacherNote').length === 1);
+}
+
+console.log('Empty lines');
+{
+	// What Milkdown hands the printer for a line left empty under an outline item.
+	const emptyLine = { type: 'paragraph', children: [{ type: 'html', value: '<br />' }] };
+	const item = (text: string, more: object[] = []) => ({
+		type: 'listItem',
+		spread: false,
+		children: [{ type: 'paragraph', children: [{ type: 'text', value: text }] }, ...more]
 	});
-	return found;
+	const written = processor.stringify({
+		type: 'root',
+		children: [{ type: 'list', ordered: false, spread: false, children: [item('Solution:', [emptyLine, emptyLine]), item('Next')] }]
+	} as never);
+	check('an empty line is written apart from the text above it', written.includes('Solution:\n\n  <br />\n\n  <br />'), JSON.stringify(written));
+	const html = renderMarkdown(written, { notes: true });
+	check('the reader draws it as space, not as "<br />"', !html.includes('&lt;br') && (html.match(/class="empty-line"/g) ?? []).length === 2, html);
+	check('…in the same item, so numbering carries on', (html.match(/<li/g) ?? []).length === 2, html);
+	const handout = renderMarkdown('Before\n\n<br />\n\n<br />\n\nAfter', { notes: false });
+	check('the handout keeps empty lines', (handout.match(/class="empty-line"/g) ?? []).length === 2, handout);
+	const cell = renderMarkdown('| a | b |\n| - | - |\n| <br /> | x |', { notes: true });
+	check('an empty table cell shows empty', !cell.includes('&lt;br'), cell);
+	check('empty lines are stable', roundTrip(written) === written, roundTrip(written));
 }
 
-function same(name: string, got: string[], want: string[]) {
-	check(name, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+console.log('The generated outline is followed through a rewrite');
+{
+	const intro = '# Limits\n\nSome *intro* text.\n';
+	const outline = '::: outline\n* Limits\n    * Intuition {{draw it}}\n* Continuity\n:::\n';
+	const after = '\nAfter the outline, [[a blank]].\n';
+	const body = intro + '\n' + outline + after;
+	const start = intro.length + 1;
+	const region = { start, end: start + outline.length };
+	const written = roundTrip(body);
+	const moved = remapRegion(region, body, written);
+	check('region found', moved !== null);
+	const got = moved ? written.slice(moved.start, moved.end) : '';
+	check('region is the outline, rewritten', got === roundTrip(outline).trim(), JSON.stringify(got));
+	const empty = remapRegion({ start: body.length, end: body.length }, body, written);
+	check('an empty region at the end stays at the end', empty?.start === written.length);
+	check('blocks that do not line up give null', remapRegion(region, body, written + '\n\nMore.') === null);
 }
 
-// Inline math and the dollar heuristics.
-same('inline math', nodes('Area is $\\pi r^2$ here.', 'InlineMath'), ['$\\pi r^2$']);
-same('prices are prose', nodes('Between $5 and $10 a day.', 'InlineMath'), []);
-same('escaped dollar', nodes('Costs \\$5 and $x$.', 'InlineMath'), ['$x$']);
-same('inline display', nodes('So $$x = 1$$ holds.', 'InlineMath'), ['$$x = 1$$']);
-
-// Display math blocks.
-same('math block', nodes('Before\n\n$$\nx = 1\n- y\n$$\n\nAfter', 'MathBlock'), ['$$\nx = 1\n- y\n$$']);
-same('one-line math block', nodes('$$x^2$$\n', 'MathBlock'), ['$$x^2$$']);
-same('math block ends a paragraph', nodes('Text\n$$\nx\n$$', 'MathBlock'), ['$$\nx\n$$']);
-same('math block in a list', nodes('- Item\n\n    $$\n    x\n    $$\n- Next', 'MathBlock'), ['$$\n    x\n    $$']);
-
-// Notes and blanks, stepping over math and code.
-same('note', nodes('- Limits {{ask them first}}', 'TeacherNote'), ['{{ask them first}}']);
-same('note with math braces', nodes('{{use $x^{2}}$ here}} done', 'TeacherNote'), ['{{use $x^{2}}$ here}}']);
-same('note with code', nodes('{{type `}}` there}} done', 'TeacherNote'), ['{{type `}}` there}}']);
-same('math inside note', nodes('{{say $x$}}', 'InlineMath'), ['$x$']);
-same('blank', nodes('A [[system]] of equations', 'Blank'), ['[[system]]']);
-same('blank lines prefix', nodes('[[3: every ordered pair]]', 'BlankLines'), ['3:']);
-same('blank is not a link', nodes('[[answer]]', 'Link'), []);
-same('empty note is text', nodes('{{}}', 'TeacherNote'), []);
-same('emphasis in note', nodes('{{*careful*}}', 'Emphasis'), ['*careful*']);
-
-// Outline fences end the list above them, as markdown-it-container does.
-const outline = '::: outline\n- Limits\n    - Intuition\n:::\n\nAfter';
-same('outline fences', nodes(outline, 'OutlineFence'), ['::: outline', ':::']);
-same('closing fence is not list text', nodes(outline, 'Paragraph'), ['Limits', 'Intuition', 'After']);
-same('other containers are text', nodes('::: warning\n', 'OutlineFence'), []);
-
-// No raw HTML.
-same('no html', nodes('<b>hi</b>', 'HTMLTag'), []);
-
-// Graph fences are ordinary fenced code to the parser.
-same('graph fence', nodes('```graph\nx: -5..5\n```', 'CodeInfo'), ['graph']);
-
-// List markers: the reader's numbering, not the typed one.
-function markers(src: string, outlined: boolean): string[] {
-	const found: string[] = [];
-	parser.parse(src).iterate({
-		enter(n) {
-			if (n.name === 'ListItem') found.push(listMarker(n.node, (a, b) => src.slice(a, b), outlined));
-		}
-	});
-	return found;
-}
-
-same('outline counts from 1', markers('- A\n- B\n    - x\n    - y\n        - 1\n            - deep', true), ['I.', 'II.', 'a.', 'b.', '1.', '–']);
-same('outline starts where the list does', markers('4. Four\n5. Five', true), ['IV.', 'V.']);
-same('later numbers are ignored', markers('4. A\n4. B\n9. C', true), ['IV.', 'V.', 'VI.']);
-// Only a list starting at 1 can interrupt a paragraph, so this one needs the blank line.
-same('nested start', markers('- A\n\n    3. c\n    1. d', true), ['I.', 'c.', 'd.']);
-check('reader agrees on nested start', /<ol start="3">/.test(renderMarkdown('::: outline\n- A\n\n    3. c\n    1. d\n:::')));
-same('plain ordered list renumbers', markers('1. A\n1. B\n1. C', false), ['1.', '2.', '3.']);
-same('plain ordered list start', markers('7. A\n8. B', false), ['7.', '8.']);
-same('plain bullets', markers('- A\n- B', false), ['•', '•']);
-same('roman out of range falls back', markers('0. Zero', true), ['0.']);
-// …and markdown-it agrees on where the count starts.
-check('reader starts at 4', /<ol start="4">/.test(renderMarkdown('::: outline\n4. Four\n5. Five\n:::')));
-
-// Writing spaces: Enter and Backspace change the count behind the scenes.
-// `|` marks the cursor, before and after.
-function key(name: string, command: StateCommand, before: string, after: string) {
-	const at = before.indexOf('|');
-	let state = EditorState.create({
-		doc: before.replace('|', ''),
-		selection: { anchor: at },
-		extensions: markdown({ base: markdownLanguage, extensions: [curriculumSyntax] })
-	});
-	ensureSyntaxTree(state, state.doc.length, 1000);
-	const handled = command({ state, dispatch: (tr) => (state = tr.state) });
-	const got = handled ? state.sliceDoc(0, state.selection.main.head) + '|' + state.sliceDoc(state.selection.main.head) : 'not handled';
-	check(name, got === after, `got ${JSON.stringify(got)}, want ${JSON.stringify(after)}`);
-}
-
-key('enter adds a line', addLine, 'Q [[3: ans|]]', 'Q [[4: ans|]]');
-key('enter in an empty space', addLine, 'Q [[3: |]]', 'Q [[4: |]]');
-key('enter stops at 12', addLine, 'Q [[12: a|]]', 'Q [[12: a|]]');
-key('enter makes a blank a space', addLine, 'A [[sys|tem]] b', 'A [[1: sys|tem]] b');
-key('enter elsewhere is ordinary', addLine, 'Q| [[3: ans]]', 'not handled');
-key('backspace at answer start', removeLineBefore, 'Q [[3: |ans]]', 'Q [[2: |ans]]');
-key('backspace after the space', removeLineBefore, 'Q [[3: ans]]| x', 'Q [[2: ans]]| x');
-key('backspace in the answer is ordinary', removeLineBefore, 'Q [[3: an|s]]', 'not handled');
-key('last line of an empty space goes', removeLineBefore, 'Q [[1: ]]|', 'Q |');
-key('last line with an answer stays', removeLineBefore, 'Q [[1: ans]]|', 'Q [[1: ans|]]');
-key('delete at answer end', removeLineAfter, 'Q [[10: ans|]]', 'Q [[9: ans|]]');
-key('delete before the space', removeLineAfter, 'Q |[[2: ans]]', 'Q |[[1: ans]]');
-key('a count past 12 shrinks from 12', removeLineAfter, 'Q [[20: ans|]]', 'Q [[11: ans|]]');
-
-console.log(`${passed} passed, ${failed} failed`);
-if (failed) process.exit(1);
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

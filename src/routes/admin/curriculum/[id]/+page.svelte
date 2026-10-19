@@ -2,16 +2,14 @@
 	import { enhance } from '$app/forms';
 	import { beforeNavigate, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
-	import type { EditorView } from '@codemirror/view';
 	import { onDestroy, untrack } from 'svelte';
-	import LiveEditor from '$lib/components/LiveEditor.svelte';
+	import CurriculumEditor, { type EditorApi } from '$lib/components/CurriculumEditor.svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import OutlineGenerator, { type Generated } from '$lib/components/OutlineGenerator.svelte';
 	import WordImport, { type ImportRequest } from '$lib/components/WordImport.svelte';
-	import { fence, prefixLines, wrap } from '$lib/editor/commands';
 	import { countNotes } from '$lib/markdown';
 	import { levelInfo, OUTLINE_LEVELS, rememberLevel, type OutlineLevel } from '$lib/outlineLevels';
-	import { asLines, closingFence, continueOutline, followEdit } from '$lib/outlineRegion';
+	import { asLines, closingFence, continueOutline, followEdit, remapRegion } from '$lib/outlineRegion';
 	import { streamOutline } from '$lib/outlineStream';
 	import type { OutlineSource } from '$lib/types';
 	import { weekLabel } from '$lib/week';
@@ -32,6 +30,10 @@
 	let week = $derived(data.resource.week_start ?? '');
 	let body = $derived(data.resource.body);
 	let source = $derived(data.resource.outline_source);
+	// What the server has, for telling an edit from an unsaved change. The body as
+	// the editor writes it, once it has rewritten what was loaded (editorReady).
+	let savedBody = $derived(data.resource.body);
+	let savedSource = $derived(data.resource.outline_source);
 
 	// Field by field, because the database hands jsonb back with its keys reordered.
 	const sourcePrint = (o: OutlineSource | null) =>
@@ -39,13 +41,7 @@
 	const fingerprint = (t: string, c: string, w: string, b: string, o: OutlineSource | null) =>
 		JSON.stringify([t.trim(), c, w, b, sourcePrint(o)]);
 	const baseline = $derived(
-		fingerprint(
-			data.resource.title,
-			data.resource.class_id,
-			data.resource.week_start ?? '',
-			data.resource.body,
-			data.resource.outline_source
-		)
+		fingerprint(data.resource.title, data.resource.class_id, data.resource.week_start ?? '', savedBody, savedSource)
 	);
 	const dirty = $derived(fingerprint(title, classId, week, body, source) !== baseline);
 
@@ -55,13 +51,15 @@
 	let mode = $state<Mode>(untrack(() => (data.resource.body.trim() ? 'read' : 'edit')));
 	let showNotes = $state(true);
 	let saving = $state(false);
+	// The sticky title bar's height: the editor's own toolbar sticks just below it.
+	let barHeight = $state(0);
 	let leaving = false;
 
 	const noteCount = $derived(countNotes(body));
 	const klass = $derived(data.classes.find((c) => c.id === classId));
 
 	let formEl = $state<HTMLFormElement>();
-	let editor = $state<EditorView>();
+	let editor = $state<EditorApi>();
 
 	/*
 	 * Outline generation. The generator reads the pages into a Guided outline;
@@ -94,6 +92,35 @@
 	let genController: AbortController | undefined;
 	onDestroy(() => genController?.abort());
 
+	/**
+	 * Brings the body into the editor's way of writing Markdown — after a load,
+	 * and after an outline streams in — keeping track of the outline through it.
+	 * Left to the next keystroke instead, that one edit would rewrite the whole
+	 * body, and lose where the outline is.
+	 */
+	function settle() {
+		if (!editor) return;
+		const next = editor.normalize(body);
+		if (next === body) return;
+		if (source) {
+			const moved = remapRegion(source, body, next);
+			const followed = moved ?? followEdit(source, body, next);
+			source = { ...source, start: followed.start, end: followed.end, edited: source.edited || !moved };
+		}
+		body = next;
+	}
+
+	/** Rewriting what was loaded is not an unsaved change: it is what Save would store. */
+	function editorReady(api: EditorApi) {
+		editor = api;
+		const clean = !dirty;
+		settle();
+		if (clean) {
+			savedBody = body;
+			savedSource = source;
+		}
+	}
+
 	function onBodyInput(next: string) {
 		if (source) {
 			const { start, end, touched } = followEdit(source, body, next);
@@ -123,6 +150,7 @@
 			return;
 		}
 		source = { ...r, start: at, end: at + text.length, edited: false };
+		settle();
 	}
 
 	/**
@@ -145,7 +173,9 @@
 		if (text === null) {
 			body = original;
 			genRetry = () => importWord(r);
+			return;
 		}
+		settle();
 	}
 
 	/** Rewrites the outline at another level, carrying over the teacher's edits if there are any. */
@@ -165,6 +195,7 @@
 			return;
 		}
 		source = { ...s, level, end: s.start + text.length, edited: false };
+		settle();
 	}
 
 	/** Adds the outline of later pages to the end of the outline, at its level. */
@@ -191,6 +222,7 @@
 			instructions: [s.instructions, r.instructions].filter(Boolean).join('\n\n').slice(0, 2000),
 			end: s.end + text.length
 		};
+		settle();
 	}
 
 	/**
@@ -263,13 +295,6 @@
 		if (nav.type === 'leave') nav.cancel();
 		else if (!confirm('You have unsaved changes. Leave without saving?')) nav.cancel();
 	});
-
-	const note = () => editor && wrap(editor, '{{', '}}', 'remind myself to…');
-	const blank = () => editor && wrap(editor, '[[', ']]', 'answer');
-	const outline = () => editor && fence(editor, '::: outline', ':::', '- Main point\n    - Sub-point\n        - Detail');
-	const mathBlock = () => editor && fence(editor, '$$', '$$', 'x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}');
-	const graph = () =>
-		editor && fence(editor, '```graph', '```', 'x: -5..5\ny: -5..5\ny = x^2 - 3\n[[point (0, -3) "vertex"]]');
 
 	function onWindowKeydown(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
@@ -370,6 +395,7 @@
 		method="POST"
 		action="?/save"
 		class="stack"
+		style:--bar-h="{barHeight}px"
 		bind:this={formEl}
 		use:enhance={() => {
 			saving = true;
@@ -381,7 +407,7 @@
 			};
 		}}
 	>
-		<div class="save-bar is-sticky cur-bar">
+		<div class="save-bar is-sticky cur-bar" bind:offsetHeight={barHeight}>
 			<input
 				class="cur-title"
 				name="title"
@@ -433,28 +459,6 @@
 				{/each}
 			</div>
 
-			{#if mode === 'edit'}
-				<!-- mousedown kept from the buttons so the editor keeps its focus and selection. -->
-				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-				<div class="cur-format" role="group" aria-label="Formatting" onmousedown={(e) => e.preventDefault()}>
-					<button type="button" class="btn btn-sm" title="Heading" onclick={() => editor && prefixLines(editor, '## ')}>H</button>
-					<button type="button" class="btn btn-sm" title="Bold (⌘B)" onclick={() => editor && wrap(editor, '**', '**', 'bold')}><b>B</b></button>
-					<button type="button" class="btn btn-sm" title="Italic (⌘I)" onclick={() => editor && wrap(editor, '*', '*', 'italic')}><i>I</i></button>
-					<button type="button" class="btn btn-sm" title="Bulleted list" onclick={() => editor && prefixLines(editor, '- ')}>• List</button>
-					<button type="button" class="btn btn-sm" title="Inline math" onclick={() => editor && wrap(editor, '$', '$', 'x^2')}>$x$</button>
-					<button type="button" class="btn btn-sm" title="Display math" onclick={mathBlock}>$$</button>
-					<button
-						type="button"
-						class="btn btn-sm"
-						title={'Graph — a coordinate plane (x: -5..5, y = x^2, point (1, 2) "A", asymptote x = 3) or a number line (number line: -5..5). Lines in [[ ]] are answers: on your copy only.'}
-						onclick={graph}>+ Graph</button
-					>
-					<button type="button" class="btn btn-sm" title="Outline — I. a. 1. by indent (Tab / Shift-Tab)" onclick={outline}>+ Outline</button>
-					<button type="button" class="btn btn-sm" title="Fill-in blank — [[answer]]. Enter inside it adds lines of writing space; Backspace takes them away" onclick={blank}>+ Blank</button>
-					<button type="button" class="btn btn-sm cur-note-btn" title="Teacher note — hidden on handouts" onclick={note}>+ Note</button>
-				</div>
-			{/if}
-
 			{#if mode === 'read'}
 				<label class="check small cur-notes-toggle">
 					<input type="checkbox" bind:checked={showNotes} />
@@ -468,13 +472,13 @@
 			<input type="hidden" name="body" value={body} />
 			<!-- Kept mounted in Read mode (just hidden) so its cursor and undo history survive. -->
 			<div class="card cur-edit" hidden={mode !== 'edit'}>
-				<LiveEditor
+				<CurriculumEditor
 					value={body}
 					oninput={onBodyInput}
 					readonly={generating}
 					label="Lecture"
-					placeholder={'# Lecture title\n\nProse, lists and tables. Math in $x^2$ or on its own lines between $$.\n\n::: outline\n- Marked I. a. 1. by indent\n    - Tab to nest, Shift-Tab to outdent {{only I see this — hidden on handouts}}\n:::'}
-					bind:view={editor}
+					placeholder="Start writing — type / for headings, lists, math, outlines and graphs"
+					onready={editorReady}
 				/>
 			</div>
 
