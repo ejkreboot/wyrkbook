@@ -51,6 +51,11 @@ check('bad TeX does not throw', typeof renderMarkdown('$\\frac{$') === 'string')
 check('raw html is escaped', !renderMarkdown('<script>alert(1)</script>').includes('<script>'));
 check('javascript: links refused', !renderMarkdown('[x](javascript:alert(1))').includes('href="javascript'));
 check('tables', renderMarkdown('| a | b |\n|---|---|\n| 1 | 2 |').includes('<table>'));
+const wide = renderMarkdown('{width=60%}\n\n| a | b |\n|---|---|\n| 1 | 2 |');
+check('table width', wide.includes('<table style="width:60%">') && !wide.includes('width='), wide);
+check('table width in a list', renderMarkdown('- x\n\n  {width=30%}\n\n  | a |\n  |---|\n  | 1 |').includes('<table style="width:30%">'));
+check('table width clamped', renderMarkdown('{width=5%}\n\n| a |\n|---|').includes('width:10%'));
+check('width line with no table stays text', renderMarkdown('{width=60%}\n\nText').includes('<p>{width=60%}</p>'));
 
 check('math inside a note renders', /teacher-note">INLINE-SECRET with <span class="katex/.test(full), full);
 check('note-only paragraph gone, not left empty', !handout.includes('<p></p>'), handout);

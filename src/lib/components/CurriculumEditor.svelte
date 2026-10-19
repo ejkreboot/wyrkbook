@@ -21,7 +21,7 @@
 	import '@milkdown/crepe/theme/frame.css';
 	import type { Crepe } from '@milkdown/crepe';
 	import { onMount } from 'svelte';
-	import { createEditor, normalizer, replaceDoc } from '$lib/editor/milkdown';
+	import { createEditor, normalizer, replaceDoc, setReadonly } from '$lib/editor/milkdown';
 
 	let {
 		value,
@@ -56,7 +56,7 @@
 		});
 		made.then((c) => {
 			if (gone) return;
-			c.setReadonly(readonly);
+			setReadonly(c, readonly);
 			crepe = c;
 			c.editor.action((ctx) => {
 				const normalize = normalizer(ctx);
@@ -85,7 +85,7 @@
 	});
 
 	$effect(() => {
-		crepe?.setReadonly(readonly);
+		if (crepe) setReadonly(crepe, readonly);
 	});
 </script>
 

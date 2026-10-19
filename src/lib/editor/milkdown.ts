@@ -5,6 +5,10 @@
  *     teacher_note   mark    {{…}}        blue; absent from handouts
  *     blank          mark    [[…]]        a fill-in blank
  *     outline        node    ::: outline  lists inside marked I. a. 1. by depth
+ *     table          width   {width=60%}  a share of the page, on the line above
+ *
+ * The table button asks for a new table's rows, columns and width — or, in a
+ * table, for its width (TableDialog); Crepe's handles add and drop rows after.
  *
  * Math is Crepe's LaTeX feature (KaTeX); a ```graph fence is a code block whose
  * preview is drawn by $lib/graph, as the reader draws it.
@@ -38,12 +42,18 @@ import {
 	listItemSchema,
 	paragraphSchema
 } from '@milkdown/kit/preset/commonmark';
-import { markRule } from '@milkdown/kit/prose';
+import { createTable, tableSchema } from '@milkdown/kit/preset/gfm';
+import type { MarkdownNode } from '@milkdown/kit/transformer';
+import { findParent, markRule } from '@milkdown/kit/prose';
 import { toggleMark, wrapIn } from '@milkdown/kit/prose/commands';
 import { Slice, type Mark, type MarkType, type Node as PMNode } from '@milkdown/kit/prose/model';
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
+import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import { $command, $inputRule, $markSchema, $nodeSchema, $prose, $remark, $shortcut } from '@milkdown/kit/utils';
+import { mount, unmount } from 'svelte';
+import TableDialog, { type TableChoice } from '$lib/components/TableDialog.svelte';
 import { renderGraph } from '$lib/graph';
+import { clampWidth } from '$lib/markdown';
 import { curriculumHandlers, emptyLineJoin, prepareMarkdown, remarkCurriculum, remarkSpacesAsLines } from './remark';
 
 /** Holds a place for an empty answer: a mark needs text, and a plain space would be trimmed off. */
@@ -117,6 +127,63 @@ export const outlineSchema = $nodeSchema('outline', () => ({
 		}
 	}
 }));
+
+/**
+ * A table's width: a percent of the page, or null to fit its contents. Read from
+ * the `width` remarkCurriculum gives a table, and written out as a tableWidth
+ * node just before it, which prints as the `{width=n%}` line.
+ */
+const widthTableSchema = tableSchema.extendSchema((prev) => (ctx) => {
+	const base = prev(ctx);
+	const width = (n: unknown) => (Number(n) ? clampWidth(Number(n)) : null);
+	return {
+		...base,
+		attrs: { ...base.attrs, width: { default: null } },
+		parseDOM: [{ tag: 'table', getAttrs: (dom) => ({ width: width((dom as HTMLElement).dataset.width) }) }],
+		toDOM: (node) => [
+			'table',
+			node.attrs.width ? { 'data-width': node.attrs.width, style: `width: ${node.attrs.width}%` } : {},
+			['tbody', 0]
+		],
+		parseMarkdown: {
+			...base.parseMarkdown,
+			// Milkdown's own runner, but for the width.
+			runner: (state, node, type) => {
+				const align = node.align as (string | null)[];
+				const rows = (node.children as MarkdownNode[]).map((row, i) => ({ ...row, align, isHeader: i === 0 }));
+				state.openNode(type, { width: width(node.width) });
+				state.next(rows);
+				state.closeNode();
+			}
+		},
+		toMarkdown: {
+			...base.toMarkdown,
+			runner: (state, node) => {
+				if (node.attrs.width) state.addNode('tableWidth', undefined, undefined, { width: node.attrs.width });
+				base.toMarkdown.runner(state, node);
+			}
+		}
+	};
+});
+
+/** Shows a table's width in the editor, on the block Crepe draws it in. */
+const tableWidthView = $prose(
+	() =>
+		new Plugin({
+			props: {
+				decorations: (state) => {
+					const found: Decoration[] = [];
+					state.doc.descendants((node, pos) => {
+						if (node.type.name !== 'table') return true;
+						if (node.attrs.width)
+							found.push(Decoration.node(pos, pos + node.nodeSize, { style: `--table-width: ${node.attrs.width}%` }));
+						return false;
+					});
+					return DecorationSet.create(state.doc, found);
+				}
+			}
+		})
+);
 
 /**
  * New list items are tight, like the ones teachers type. Milkdown makes them
@@ -323,6 +390,48 @@ export const insertOutlineCommand = $command('InsertOutline', (ctx) => () => (st
 	return insertBlock(state, outline.create(null, bulletListSchema.type(ctx).create(null, point)), dispatch);
 });
 
+/** The table the selection is in, if it is in one. */
+function tableAt(state: EditorState) {
+	return findParent((node) => node.type.name === 'table')(state.selection.$from);
+}
+
+// What the last table was made with, to start the next from.
+let lastTable: TableChoice = { rows: 3, cols: 3, width: null };
+
+/**
+ * Asks for a new table's rows, columns and width and puts it in at the cursor;
+ * in a table, asks for that table's width.
+ */
+function chooseTable(ctx: Ctx) {
+	const view = ctx.get(editorViewCtx);
+	const table = tableAt(view.state);
+	const initial = table
+		? { rows: table.node.childCount, cols: table.node.firstChild?.childCount ?? 1, width: table.node.attrs.width }
+		: lastTable;
+	const dialog = mount(TableDialog, {
+		target: document.body,
+		props: {
+			initial,
+			editing: !!table,
+			anchor: view.coordsAtPos(view.state.selection.from),
+			onclose: (choice: TableChoice | null) => {
+				void unmount(dialog);
+				view.focus();
+				if (!choice) return;
+				const { state } = view;
+				const now = tableAt(state);
+				if (now) {
+					view.dispatch(state.tr.setNodeMarkup(now.from, undefined, { ...now.node.attrs, width: choice.width }));
+				} else {
+					lastTable = choice;
+					const made = createTable(ctx, choice.rows, choice.cols);
+					insertBlock(state, made.type.create({ ...made.attrs, width: choice.width }, made.content), view.dispatch);
+				}
+			}
+		}
+	});
+}
+
 const GRAPH_SAMPLE = 'x: -5..5\ny: -5..5\ny = x^2 - 3\n[[point (0, -3) "vertex"]]';
 
 export const insertGraphCommand = $command('InsertGraph', (ctx) => () => (state, dispatch) => {
@@ -343,10 +452,46 @@ const outlineIcon = svg(
 	'Outline — lists inside are numbered I. a. 1. by depth',
 	'M120-120v-80h720v80H120Zm280-160v-80h440v80H400Zm0-160v-80h440v80H400Zm-160-160v-80h600v80H240ZM120-760v-80h720v80H120Z'
 );
+const tableIcon = svg(
+	'Table — choose rows, columns and width. In a table: change its width',
+	'M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm240-240H200v160h240v-160Zm80 0v160h240v-160H520Zm-80-80v-160H200v160h240Zm80 0h240v-160H520v160ZM200-680h560v-80H200v80Z'
+);
 const graphIcon = svg(
 	'Graph — a coordinate plane or number line',
 	'M120-120v-720h80v640h640v80H120Zm120-120v-280h120v280H240Zm200 0v-480h120v480H440Zm200 0v-160h120v160H640Z'
 );
+
+/** A shortcut as Milkdown writes it (`Mod-Alt-x`), as this keyboard labels it. */
+function keys(shortcut: string) {
+	const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+	const names: Record<string, string> = mac ? { Mod: '⌘', Alt: '⌥', Shift: '⇧' } : { Mod: 'Ctrl+', Alt: 'Alt+', Shift: 'Shift+' };
+	return shortcut
+		.split('-')
+		.map((k) => names[k] ?? k.toUpperCase())
+		.join('');
+}
+
+/** Tooltips for Crepe's own top-bar buttons, which come with none. */
+const TOP_BAR_TITLES: Record<string, [string, string?]> = {
+	bold: ['Bold', 'Mod-b'],
+	italic: ['Italic', 'Mod-i'],
+	strikethrough: ['Strikethrough', 'Mod-Alt-x'],
+	code: ['Code — inline', 'Mod-e'],
+	'bullet-list': ['Bulleted list', 'Mod-Alt-8'],
+	'ordered-list': ['Numbered list', 'Mod-Alt-7'],
+	link: ['Link'],
+	'code-block': ['Code block', 'Mod-Alt-c'],
+	math: ['Math — a LaTeX block. For math in a line, type $x^2$'],
+	quote: ['Quote', 'Mod-Shift-b'],
+	hr: ['Divider line']
+};
+
+/** `icon` with a tooltip, unless it has one. */
+function titled(icon: string, [label, shortcut]: [string, string?]) {
+	if (icon.includes('<title>')) return icon;
+	const title = shortcut ? `${label} (${keys(shortcut)})` : label;
+	return icon.replace(/<svg\b[^>]*>/, (open) => `${open}<title>${title}</title>`);
+}
 
 /** Whether the selection is in `type`, or — with nothing selected — the cursor is. */
 function markActive(ctx: Ctx, type: MarkType) {
@@ -408,6 +553,14 @@ export async function createEditor(
 					// Task lists: markdown-it would print their [ ] as text.
 					const list = builder.getGroup('list').group;
 					list.items = list.items.filter((item) => item.key !== 'task-list');
+					// Crepe's puts in a 3 × 3 table, with no say in its size.
+					const table = builder.getGroup('insert').group.items.find((item) => item.key === 'table');
+					if (table)
+						Object.assign(table, {
+							icon: tableIcon,
+							active: (ctx: Ctx) => !!tableAt(ctx.get(editorViewCtx).state),
+							onRun: chooseTable
+						});
 					builder
 						.addGroup('curriculum', 'Curriculum')
 						.addItem('teacher-note', {
@@ -430,6 +583,11 @@ export async function createEditor(
 							active: () => false,
 							onRun: (ctx: Ctx) => ctx.get(commandsCtx).call(insertGraphCommand.key)
 						});
+					for (const group of builder.build())
+						for (const item of group.items) {
+							const title = TOP_BAR_TITLES[item.key];
+							if (title && 'icon' in item && typeof item.icon === 'string') item.icon = titled(item.icon, title);
+						}
 				}
 			},
 			[Crepe.Feature.BlockEdit]: {
@@ -439,6 +597,12 @@ export async function createEditor(
 						ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key);
 						ctx.get(commandsCtx).call(key);
 					};
+					const table = builder.getGroup('advanced').group.items.find((item) => item.key === 'table');
+					if (table)
+						table.onRun = (ctx: Ctx) => {
+							ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key);
+							chooseTable(ctx);
+						};
 					builder
 						.addGroup('curriculum', 'Curriculum')
 						.addItem('outline', { label: 'Outline', icon: outlineIcon, onRun: (ctx: Ctx) => run(ctx, insertOutlineCommand.key) })
@@ -492,6 +656,8 @@ export async function createEditor(
 		.use(teacherNoteSchema)
 		.use(blankSchema)
 		.use(outlineSchema)
+		.use(widthTableSchema)
+		.use(tableWidthView)
 		.use(noteInputRule)
 		.use(blankInputRule)
 		.use(blankTyping)
@@ -503,6 +669,23 @@ export async function createEditor(
 
 	await crepe.create();
 	return crepe;
+}
+
+/**
+ * Makes the editor read-only or not. Crepe's top bar draws nothing while the
+ * editor is read-only, and in doing so stops listening for the updates that
+ * redraw it (@milkdown/crepe 7.22), so it would stay empty once the editor is
+ * editable again — after an outline streams in — until the page is reloaded.
+ * Remaking the plugin views remakes it; the document, undo history and plugin
+ * state are kept.
+ */
+export function setReadonly(crepe: Crepe, readonly: boolean) {
+	crepe.editor.action((ctx) => {
+		const view = ctx.get(editorViewCtx);
+		const was = !view.editable;
+		crepe.setReadonly(readonly);
+		if (was && !readonly) view.updateState(view.state.reconfigure({ plugins: [...view.state.plugins] }));
+	});
 }
 
 /** Puts `markdown` in place of the whole document, as one step that undo skips over. */

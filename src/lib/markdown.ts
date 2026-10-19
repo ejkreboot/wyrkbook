@@ -41,6 +41,9 @@
  * SVG by $lib/graph. A line of one wrapped in [[double brackets]] is an answer:
  * drawn on the teacher copy, absent from the handout.
  *
+ * A table is as wide as its contents, or set to a share of the page by a line
+ * of `{width=60%}` just above it.
+ *
  * Raw HTML is off. The body is typed by a teacher and read by other teachers in
  * the org; there is no reason for one of them to be able to run script in the
  * other's session.
@@ -282,6 +285,31 @@ const emptyLines: CoreRule = (state) => {
 	});
 };
 
+/**
+ * Table width. A line of just `{width=60%}` directly above a table sets it to
+ * that share of the page; the line itself is not drawn. Without one a table is
+ * as wide as its contents. Anywhere else the line is just text.
+ */
+export const TABLE_WIDTH = /^\{width=(\d{1,3})%\}$/;
+export const clampWidth = (n: number) => Math.min(100, Math.max(10, Math.round(n)));
+const tableWidths: CoreRule = (state) => {
+	const tokens = state.tokens;
+	const out: Token[] = [];
+	for (let i = 0; i < tokens.length; i++) {
+		const t = tokens[i];
+		const width = t.type === 'paragraph_open' && TABLE_WIDTH.exec(tokens[i + 1]?.content.trim() ?? '');
+		if (width && tokens[i + 2]?.type === 'paragraph_close' && tokens[i + 3]?.type === 'table_open') {
+			tokens[i + 3].attrSet('style', `width:${clampWidth(Number(width[1]))}%`);
+			// The line is part of the table's block, for topBlocks.
+			if (t.map && tokens[i + 3].map) tokens[i + 3].map = [t.map[0], tokens[i + 3].map![1]];
+			i += 2;
+			continue;
+		}
+		out.push(t);
+	}
+	state.tokens = out;
+};
+
 function useMath(m: MarkdownIt) {
 	m.inline.ruler.after('escape', 'math_inline', mathInline);
 	m.block.ruler.after('blockquote', 'math_block', mathBlock, {
@@ -300,6 +328,7 @@ md.inline.ruler.after('math_inline', 'teacher_note', teacherNote);
 md.inline.ruler.after('teacher_note', 'blank', blank); // ahead of `link`, which would take `[[`
 md.core.ruler.after('inline', 'teacher_notes', tidyNotes);
 md.core.ruler.after('teacher_notes', 'empty_lines', emptyLines);
+md.core.ruler.after('empty_lines', 'table_widths', tableWidths);
 
 // Typed on its own: md.use() takes plugin options as any[], which would leave
 // the render callback untyped.

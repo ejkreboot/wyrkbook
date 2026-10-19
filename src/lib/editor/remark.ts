@@ -7,6 +7,7 @@
  *     {{teacher note}}            → teacherNote, phrasing inside
  *     [[answer]] / [[3: answer]]  → blank, with `lines` (0 for a fill-in blank)
  *     ::: outline … :::           → outline, flow inside
+ *     {width=60%} above a table   → the table's `width`, written back as a tableWidth
  *
  * Math is remark-math's (Crepe's LaTeX feature), and ```graph fences stay
  * ordinary code blocks.
@@ -17,6 +18,7 @@
  * `}}` inside $x^{2}}$ cannot close a note — the same as markdown-it's rules,
  * which step over whole tokens.
  */
+import { clampWidth, TABLE_WIDTH } from '../markdown.ts';
 
 export type MdNode = {
 	type: string;
@@ -133,12 +135,24 @@ function outlines(children: MdNode[]): MdNode[] {
 	return out;
 }
 
+/** A `{width=n%}` paragraph just above a table becomes that table's `width`. */
+function tableWidths(children: MdNode[]): MdNode[] {
+	const out: MdNode[] = [];
+	for (let i = 0; i < children.length; i++) {
+		const c = children[i];
+		const width = isFence(c, TABLE_WIDTH) && children[i + 1]?.type === 'table' && TABLE_WIDTH.exec(c.children![0].value!.trim());
+		if (width) children[i + 1].width = clampWidth(Number(width[1]));
+		else out.push(c);
+	}
+	return out;
+}
+
 const OPAQUE = new Set(['code', 'inlineCode', 'math', 'inlineMath', 'html']);
 
 function walk(node: MdNode) {
 	if (!node.children || OPAQUE.has(node.type)) return;
 	for (const c of node.children) walk(c);
-	node.children = outlines(node.children);
+	node.children = tableWidths(outlines(node.children));
 	if (node.children.some((c) => c.type === 'text' && c.value && MARKER.test(c.value)))
 		node.children = build(split(node.children), 0, null).nodes;
 }
@@ -252,7 +266,9 @@ export const curriculumHandlers: Record<string, Handle> = {
 		value += tracker.move(':::');
 		exit();
 		return value;
-	}
+	},
+	// Written just before its table, which the editor can't give a width of its own to print.
+	tableWidth: (node) => `{width=${node.width}%}`
 };
 
 /**

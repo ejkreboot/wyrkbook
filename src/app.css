@@ -890,6 +890,8 @@ input.problem-lines { width: 3.2rem; min-height: 28px; padding: .1rem .25rem; fo
    reader, let it take the color around it — blue in notes and answers. */
 .cur-milkdown .milkdown span[data-type='math_inline'] { color: inherit; }
 .cur-milkdown .milkdown .milkdown-code-block .preview-panel .graph-wrap { margin: 0; }
+/* A table given a width ({width=60%}) takes that share of the column, as on the page. */
+.cur-milkdown .milkdown .milkdown-table-block[style*='--table-width'] .table-wrapper > table { width: var(--table-width); }
 /* Crepe dresses code blocks — math and graph sources among them — in CodeMirror's
    One Dark; on this light page its pale text and dark gutter want lightening. */
 .cur-milkdown .milkdown .milkdown-code-block .cm-editor { color: var(--ink); background: transparent; }

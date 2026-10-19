@@ -28,11 +28,25 @@ function check(name: string, cond: boolean, detail = '') {
 	}
 }
 
+/**
+ * A table's width goes out as the editor writes it (widthTableSchema in
+ * $lib/editor/milkdown): a tableWidth node just before the table.
+ */
+function widthsOut() {
+	const walk = (n: Node) => {
+		if (!n.children) return;
+		n.children.forEach(walk);
+		n.children = n.children.flatMap((c) => (c.type === 'table' && c.width ? [{ type: 'tableWidth', width: c.width }, c] : [c]));
+	};
+	return walk;
+}
+
 const processor = unified()
 	.use(remarkParse)
 	.use(remarkGfm)
 	.use(remarkMath)
 	.use(remarkCurriculum)
+	.use(widthsOut)
 	.use(remarkStringify, stringifyOptions as never);
 
 function roundTrip(src: string): string {
@@ -43,7 +57,7 @@ function roundTrip(src: string): string {
 function tree(src: string) {
 	return processor.runSync(processor.parse(prepareMarkdown(src))) as unknown as { children: Node[] };
 }
-type Node = { type: string; value?: string; lines?: number; children?: Node[] };
+type Node = { type: string; value?: string; lines?: number; width?: number; children?: Node[] };
 const find = (n: Node, type: string): Node[] =>
 	[...(n.type === type ? [n] : []), ...(n.children ?? []).flatMap((c) => find(c, type))];
 
@@ -95,7 +109,23 @@ $$`,
 Empty {{}} and [[]] stay as typed.`,
 	'table': `| a | b |
 | - | - |
-| $x$ | [[y]] |`
+| $x$ | [[y]] |`,
+	'table with a width': `{width=60%}
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+- In a list:
+
+  {width=40%}
+
+  | c |
+  | - |
+  | 3 |`,
+	'width line with no table after it': `{width=60%}
+
+Just text.`
 };
 
 // KaTeX copies the TeX into an annotation, spaces and all; the math drawn is what matters.
@@ -204,6 +234,15 @@ console.log('Writing space read in as empty lines');
 	check('a space in a heading becomes a fill-in blank', head.length === 1 && !head[0].lines);
 	const html = renderMarkdown(write('- Solve: [[2: $x = 2$]]'), { notes: false });
 	check('the handout gets the lines and not the answer', (html.match(/class="empty-line"/g) ?? []).length === 2 && !html.includes('katex'), html);
+}
+
+console.log('Table widths');
+{
+	const tables = find(tree(CASES['table with a width']) as unknown as Node, 'table');
+	check('each table takes the width above it', tables.map((t) => t.width).join() === '60,40', tables.map((t) => t.width).join());
+	check('the width line is gone from the tree', !find(tree(CASES['table with a width']) as unknown as Node, 'text').some((t) => t.value?.includes('width=')));
+	check('a width out of range is brought into it', find(tree('{width=250%}\n\n| a |\n| - |'), 'table')[0]?.width === 100);
+	check('without a table after it, the line stays', find(tree(CASES['width line with no table after it']) as unknown as Node, 'table').length === 0 && roundTrip(CASES['width line with no table after it']).startsWith('{width=60%}'));
 }
 
 console.log('The generated outline is followed through a rewrite');
