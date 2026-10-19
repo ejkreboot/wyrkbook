@@ -13,6 +13,8 @@
  * Writing spaces are edited as space: Enter inside a blank's answer adds a line
  * (a fill-in blank becomes a one-line space), Backspace at the start of a
  * space's answer takes one away (the last turns it back into a fill-in blank).
+ * Each space also carries − / + buttons beside its line count (spaceControls),
+ * as the start of an answer that opens with math is hard to put the cursor at.
  *
  * In an outline, Enter on an empty item, or on an empty line under one, adds
  * an empty line rather than splitting the list (outlineSpace).
@@ -40,8 +42,9 @@ import {
 } from '@milkdown/kit/preset/commonmark';
 import { markRule } from '@milkdown/kit/prose';
 import { toggleMark, wrapIn } from '@milkdown/kit/prose/commands';
-import { Slice, type MarkType, type Node as PMNode } from '@milkdown/kit/prose/model';
+import { Slice, type Mark, type MarkType, type Node as PMNode } from '@milkdown/kit/prose/model';
 import { Plugin, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { $command, $inputRule, $markSchema, $nodeSchema, $prose, $remark, $shortcut } from '@milkdown/kit/utils';
 import { renderGraph } from '$lib/graph';
 import { MAX_LINES, curriculumHandlers, emptyLineJoin, prepareMarkdown, remarkCurriculum } from './remark';
@@ -222,6 +225,86 @@ const blankKeymap = $shortcut((ctx) => ({
 	Enter: { key: 'Enter', priority: 100, onRun: () => changeLines(blankSchema.type(ctx), 1) },
 	Backspace: { key: 'Backspace', priority: 100, onRun: () => changeLines(blankSchema.type(ctx), -1) }
 }));
+
+type Stretch = { mark: Mark; from: number; to: number };
+
+/** Every writing space in `doc`: each unbroken stretch of a blank mark with lines. */
+function writingSpaces(doc: PMNode, type: MarkType): Stretch[] {
+	const spaces: Stretch[] = [];
+	doc.descendants((node, pos) => {
+		if (!node.isTextblock) return true;
+		let open: Stretch | null = null;
+		let at = pos + 1;
+		for (let i = 0; i < node.childCount; i++) {
+			const child = node.child(i);
+			const mark = type.isInSet(child.marks);
+			if (open && mark && open.mark.eq(mark) && open.to === at) open.to += child.nodeSize;
+			else {
+				if (open) spaces.push(open);
+				open = mark?.attrs.lines ? { mark, from: at, to: at + child.nodeSize } : null;
+			}
+			at += child.nodeSize;
+		}
+		if (open) spaces.push(open);
+		return false;
+	});
+	return spaces;
+}
+
+function button(label: string, title: string, onclick: () => void) {
+	const el = document.createElement('button');
+	el.type = 'button';
+	el.textContent = label;
+	el.title = title;
+	el.addEventListener('mousedown', (e) => e.preventDefault()); // keep the cursor where it was
+	el.addEventListener('click', onclick);
+	return el;
+}
+
+/**
+ * − 8 lines + at the end of each writing space: one line fewer (the last turns
+ * it back into a fill-in blank) or one more.
+ */
+const spaceControls = $prose((ctx) => {
+	const type = blankSchema.type(ctx);
+	const change = (view: EditorView, end: number, delta: 1 | -1) => {
+		if (!view.editable) return;
+		const space = writingSpaces(view.state.doc, type).find((s) => s.to === end);
+		if (!space) return;
+		const next = Math.max(0, Math.min(MAX_LINES, space.mark.attrs.lines + delta));
+		view.dispatch(
+			view.state.tr.removeMark(space.from, space.to, type).addMark(space.from, space.to, type.create({ lines: next }))
+		);
+	};
+	return new Plugin({
+		props: {
+			decorations: (state) =>
+				DecorationSet.create(
+					state.doc,
+					writingSpaces(state.doc, type).map(({ mark, to }) => {
+						const lines: number = mark.attrs.lines;
+						return Decoration.widget(
+							to,
+							(view, getPos) => {
+								const el = document.createElement('span');
+								el.className = 'write-lines';
+								el.contentEditable = 'false';
+								const at = () => getPos() ?? -1;
+								el.append(
+									button('−', lines > 1 ? 'One line less' : 'Make it a fill-in blank', () => change(view, at(), -1)),
+									` ${lines} ${lines === 1 ? 'line' : 'lines'} `,
+									button('+', 'One line more', () => change(view, at(), 1))
+								);
+								if (lines >= MAX_LINES) (el.lastChild as HTMLButtonElement).disabled = true;
+								return el;
+							},
+							{ side: -1, marks: [mark], key: `write-lines:${lines}`, ignoreSelection: true, stopEvent: () => true }
+						);
+					})
+				)
+		}
+	});
+});
 
 /**
  * Enter in an outline, where a list would split or lift the item and restart
@@ -453,6 +536,7 @@ export async function createEditor(
 		.use(noteInputRule)
 		.use(blankInputRule)
 		.use(blankKeymap)
+		.use(spaceControls)
 		.use(outlineKeymap)
 		.use(toggleTeacherNoteCommand)
 		.use(toggleBlankCommand)

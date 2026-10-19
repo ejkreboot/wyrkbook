@@ -878,12 +878,21 @@ tbody tr:hover { background: var(--paper-2); }
 .cur-milkdown .milkdown > .ProseMirror .outline { margin: 0 0 .9em; }
 .cur-milkdown .milkdown > .ProseMirror .outline :is(ul, ol) { margin-bottom: 0; }
 .cur-milkdown .milkdown > .ProseMirror .outline > :is(ol, ul) { padding-left: 2.8em; }
-/* A writing space's answer is labelled with how many lines it will get. */
-.cur-milkdown .milkdown > .ProseMirror .write::after {
-	content: attr(data-lines) ' lines'; float: right; margin-right: .5em;
+/* A writing space's answer is labelled with how many lines it will get, with − / + to change that. */
+.cur-milkdown .milkdown > .ProseMirror .write-lines {
+	float: right; margin-right: .5em; user-select: none;
 	font-family: var(--sans); font-size: .7rem; color: var(--ink-3);
 }
-.cur-milkdown .milkdown > .ProseMirror .write[data-lines="1"]::after { content: '1 line'; }
+.cur-milkdown .milkdown > .ProseMirror .write-lines button {
+	width: 1.6em; height: 1.6em; padding: 0; border: 1px solid var(--line); border-radius: 4px;
+	background: var(--card); color: var(--ink-2); font: inherit; line-height: 1; cursor: pointer;
+}
+.cur-milkdown .milkdown > .ProseMirror .write-lines button:hover:not(:disabled) { background: var(--paper-2); color: var(--ink); }
+.cur-milkdown .milkdown > .ProseMirror .write-lines button:disabled { opacity: .4; cursor: default; }
+.cur-milkdown.is-readonly .milkdown > .ProseMirror .write-lines button { display: none; }
+/* Crepe colors inline math with its primary (our terracotta accent); like the
+   reader, let it take the color around it — blue in notes and answers. */
+.cur-milkdown .milkdown span[data-type='math_inline'] { color: inherit; }
 .cur-milkdown .milkdown .milkdown-code-block .preview-panel .graph-wrap { margin: 0; }
 /* Crepe dresses code blocks — math and graph sources among them — in CodeMirror's
    One Dark; on this light page its pale text and dark gutter want lightening. */
