@@ -11,7 +11,7 @@ import remarkMath from 'remark-math';
 import remarkParse from 'remark-parse';
 import remarkStringify from 'remark-stringify';
 import { unified } from 'unified';
-import { prepareMarkdown, remarkCurriculum, stringifyOptions } from '../src/lib/editor/remark.ts';
+import { prepareMarkdown, remarkCurriculum, remarkSpacesAsLines, stringifyOptions } from '../src/lib/editor/remark.ts';
 import { renderMarkdown } from '../src/lib/markdown.ts';
 import { remapRegion } from '../src/lib/outlineRegion.ts';
 
@@ -174,6 +174,36 @@ console.log('Empty lines');
 	const cell = renderMarkdown('| a | b |\n| - | - |\n| <br /> | x |', { notes: true });
 	check('an empty table cell shows empty', !cell.includes('&lt;br'), cell);
 	check('empty lines are stable', roundTrip(written) === written, roundTrip(written));
+}
+
+console.log('Writing space read in as empty lines');
+{
+	const spaces = unified().use(remarkParse).use(remarkMath).use(remarkCurriculum).use(remarkSpacesAsLines);
+	const read = (src: string) => spaces.runSync(spaces.parse(prepareMarkdown(src))) as unknown as Node;
+	// Milkdown writes an empty paragraph back out as `<br />`.
+	const asWritten = (n: Node): Node =>
+		n.type === 'paragraph' && !n.children?.length
+			? { type: 'paragraph', children: [{ type: 'html', value: '<br />' }] }
+			: { ...n, children: n.children?.map(asWritten) };
+	const write = (src: string) => processor.stringify(asWritten(read(src)) as never);
+	const isEmpty = (n: Node) => n.type === 'paragraph' && !n.children?.length;
+
+	const item = find(read('- Solve: [[3: $x = 2$, so done]]\n- Next'), 'listItem')[0];
+	check('the answer becomes a note', find(item, 'teacherNote').length === 1 && !find(item, 'blank').length);
+	check('n empty lines below its paragraph, in the same item', item.children?.slice(1).filter(isEmpty).length === 3, JSON.stringify(item));
+	const sub = find(read('- Example: [[2: answer]]\n    - Sub point'), 'listItem')[0];
+	check('…ahead of the item\'s sub-list', sub.children?.map((c) => (isEmpty(c) ? 'line' : c.type)).join() === 'paragraph,line,line,list');
+	check('an empty space leaves only lines', write('- Show work: [[4: ]]') === '- Show work:\n\n  <br />\n\n  <br />\n\n  <br />\n\n  <br />\n', JSON.stringify(write('- Show work: [[4: ]]')));
+	const solo = read('Graph:\n\n[[3: the line]]');
+	check('a space on its own line keeps its paragraph for the note', solo.children?.filter(isEmpty).length === 3 && find(solo, 'teacherNote').length === 1);
+	check('…and with no answer, is just the lines', read('Graph:\n\n[[3: ]]').children?.length === 4);
+	const beside = find(read('- Form: [[8: $y = 2$]]{{Sketch it.}}'), 'teacherNote');
+	check('a note right after joins the answer, with a space', beside.length === 1 && find(beside[0], 'text').some((t) => t.value === ' '), JSON.stringify(beside));
+	check('a fill-in blank stays a blank', find(read('- Form a [[system]].'), 'blank').length === 1);
+	const head = find(read('# Title [[2: x]]'), 'blank');
+	check('a space in a heading becomes a fill-in blank', head.length === 1 && !head[0].lines);
+	const html = renderMarkdown(write('- Solve: [[2: $x = 2$]]'), { notes: false });
+	check('the handout gets the lines and not the answer', (html.match(/class="empty-line"/g) ?? []).length === 2 && !html.includes('katex'), html);
 }
 
 console.log('The generated outline is followed through a rewrite');

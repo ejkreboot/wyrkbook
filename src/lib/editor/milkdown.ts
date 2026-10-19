@@ -3,18 +3,16 @@
  * ($lib/editor/remark) as ProseMirror marks and nodes.
  *
  *     teacher_note   mark    {{…}}        blue; absent from handouts
- *     blank          mark    [[…]]        `lines` 0 is a fill-in blank, n > 0
- *                                         n lines of writing space
+ *     blank          mark    [[…]]        a fill-in blank
  *     outline        node    ::: outline  lists inside marked I. a. 1. by depth
  *
  * Math is Crepe's LaTeX feature (KaTeX); a ```graph fence is a code block whose
  * preview is drawn by $lib/graph, as the reader draws it.
  *
- * Writing spaces are edited as space: Enter inside a blank's answer adds a line
- * (a fill-in blank becomes a one-line space), Backspace at the start of a
- * space's answer takes one away (the last turns it back into a fill-in blank).
- * Each space also carries − / + buttons beside its line count (spaceControls),
- * as the start of an answer that opens with math is hard to put the cursor at.
+ * Space to write in is empty lines, typed and deleted like any other line. A
+ * writing space in the Markdown (`[[n: answer]]`, as imports and generated
+ * outlines have it) is read in as its answer in a teacher note and n empty
+ * lines below (remarkSpacesAsLines), and written back out that way.
  *
  * In an outline, Enter on an empty item, or on an empty line under one, adds
  * an empty line rather than splitting the list (outlineSpace).
@@ -42,17 +40,17 @@ import {
 } from '@milkdown/kit/preset/commonmark';
 import { markRule } from '@milkdown/kit/prose';
 import { toggleMark, wrapIn } from '@milkdown/kit/prose/commands';
-import { Slice, type Mark, type MarkType, type Node as PMNode } from '@milkdown/kit/prose/model';
+import { Slice, type MarkType, type Node as PMNode } from '@milkdown/kit/prose/model';
 import { Plugin, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
-import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import { $command, $inputRule, $markSchema, $nodeSchema, $prose, $remark, $shortcut } from '@milkdown/kit/utils';
 import { renderGraph } from '$lib/graph';
-import { MAX_LINES, curriculumHandlers, emptyLineJoin, prepareMarkdown, remarkCurriculum } from './remark';
+import { curriculumHandlers, emptyLineJoin, prepareMarkdown, remarkCurriculum, remarkSpacesAsLines } from './remark';
 
 /** Holds a place for an empty answer: a mark needs text, and a plain space would be trimmed off. */
 const EMPTY_ANSWER = ' ';
 
 const curriculumRemark = $remark('curriculum', () => remarkCurriculum as never);
+const spacesRemark = $remark('spacesAsLines', () => remarkSpacesAsLines as never);
 
 export const teacherNoteSchema = $markSchema('teacher_note', () => ({
 	parseDOM: [{ tag: 'span.teacher-note' }],
@@ -74,21 +72,13 @@ export const teacherNoteSchema = $markSchema('teacher_note', () => ({
 }));
 
 export const blankSchema = $markSchema('blank', () => ({
-	attrs: { lines: { default: 0, validate: 'number' } },
-	parseDOM: [
-		{ tag: 'span.blank', getAttrs: () => ({ lines: 0 }) },
-		{ tag: 'span.write', getAttrs: (dom) => ({ lines: Number((dom as HTMLElement).dataset.lines) || 1 }) }
-	],
-	toDOM: (mark) => {
-		const lines: number = mark.attrs.lines;
-		return lines
-			? ['span', { class: 'write', 'data-lines': String(lines), style: `--lines:${lines}` }, 0]
-			: ['span', { class: 'blank' }, 0];
-	},
+	// A writing space pasted from the reader comes in as a fill-in blank: space here is empty lines.
+	parseDOM: [{ tag: 'span.blank' }, { tag: 'span.write' }],
+	toDOM: () => ['span', { class: 'blank' }, 0],
 	parseMarkdown: {
 		match: (node) => node.type === 'blank',
 		runner: (state, node, type) => {
-			state.openMark(type, { lines: (node.lines as number) ?? 0 });
+			state.openMark(type);
 			if (node.children?.length) state.next(node.children);
 			else state.addText(EMPTY_ANSWER);
 			state.closeMark(type);
@@ -97,7 +87,7 @@ export const blankSchema = $markSchema('blank', () => ({
 	toMarkdown: {
 		match: (mark) => mark.type.name === 'blank',
 		runner: (state, mark) => {
-			state.withMark(mark, 'blank', undefined, { lines: mark.attrs.lines });
+			state.withMark(mark, 'blank');
 		}
 	}
 }));
@@ -141,12 +131,10 @@ const noteInputRule = $inputRule((ctx) => markRule(/\{\{([^{}]+)\}\}$/, teacherN
 const blankInputRule = $inputRule((ctx) => markRule(/\[\[([^[\]]+)\]\]$/, blankSchema.type(ctx)));
 
 /** The stretch of `type` around an empty selection, inside its textblock. */
-function markAround(state: EditorState, type: MarkType, { inside = false } = {}) {
+function markAround(state: EditorState, type: MarkType) {
 	const { $from, empty } = state.selection;
 	if (!empty) return null;
-	const before = type.isInSet($from.nodeBefore?.marks ?? []);
-	const after = type.isInSet($from.nodeAfter?.marks ?? []);
-	const mark = inside ? before && after && before.eq(after) && before : (after ?? before);
+	const mark = type.isInSet($from.nodeAfter?.marks ?? []) ?? type.isInSet($from.nodeBefore?.marks ?? []);
 	if (!mark) return null;
 
 	const parent = $from.parent;
@@ -197,114 +185,6 @@ export const toggleTeacherNoteCommand = $command(
 	(ctx) => () => markCommand(teacherNoteSchema.type(ctx), 'remind myself to…')
 );
 export const toggleBlankCommand = $command('ToggleBlank', (ctx) => () => markCommand(blankSchema.type(ctx), 'answer'));
-
-/** One line more or fewer of writing space for the blank at the cursor. */
-function changeLines(type: MarkType, delta: 1 | -1): Command {
-	return (state, dispatch) => {
-		const around =
-			delta > 0 ? markAround(state, type, { inside: true }) : backspaceTarget(state, type);
-		if (!around) return false;
-		const lines: number = around.mark.attrs.lines;
-		const next = Math.max(0, Math.min(MAX_LINES, lines + delta));
-		if (next === lines) return delta > 0; // already at the most: swallow the Enter
-		dispatch?.(state.tr.removeMark(around.from, around.to, type).addMark(around.from, around.to, type.create({ lines: next })));
-		return true;
-	};
-}
-
-/** A writing space whose answer the cursor is at the very start of. */
-function backspaceTarget(state: EditorState, type: MarkType) {
-	const { $from, empty } = state.selection;
-	if (!empty) return null;
-	const after = type.isInSet($from.nodeAfter?.marks ?? []);
-	if (!after || !after.attrs.lines || after.isInSet($from.nodeBefore?.marks ?? [])) return null;
-	return markAround(state, type);
-}
-
-const blankKeymap = $shortcut((ctx) => ({
-	Enter: { key: 'Enter', priority: 100, onRun: () => changeLines(blankSchema.type(ctx), 1) },
-	Backspace: { key: 'Backspace', priority: 100, onRun: () => changeLines(blankSchema.type(ctx), -1) }
-}));
-
-type Stretch = { mark: Mark; from: number; to: number };
-
-/** Every writing space in `doc`: each unbroken stretch of a blank mark with lines. */
-function writingSpaces(doc: PMNode, type: MarkType): Stretch[] {
-	const spaces: Stretch[] = [];
-	doc.descendants((node, pos) => {
-		if (!node.isTextblock) return true;
-		let open: Stretch | null = null;
-		let at = pos + 1;
-		for (let i = 0; i < node.childCount; i++) {
-			const child = node.child(i);
-			const mark = type.isInSet(child.marks);
-			if (open && mark && open.mark.eq(mark) && open.to === at) open.to += child.nodeSize;
-			else {
-				if (open) spaces.push(open);
-				open = mark?.attrs.lines ? { mark, from: at, to: at + child.nodeSize } : null;
-			}
-			at += child.nodeSize;
-		}
-		if (open) spaces.push(open);
-		return false;
-	});
-	return spaces;
-}
-
-function button(label: string, title: string, onclick: () => void) {
-	const el = document.createElement('button');
-	el.type = 'button';
-	el.textContent = label;
-	el.title = title;
-	el.addEventListener('mousedown', (e) => e.preventDefault()); // keep the cursor where it was
-	el.addEventListener('click', onclick);
-	return el;
-}
-
-/**
- * − 8 lines + at the end of each writing space: one line fewer (the last turns
- * it back into a fill-in blank) or one more.
- */
-const spaceControls = $prose((ctx) => {
-	const type = blankSchema.type(ctx);
-	const change = (view: EditorView, end: number, delta: 1 | -1) => {
-		if (!view.editable) return;
-		const space = writingSpaces(view.state.doc, type).find((s) => s.to === end);
-		if (!space) return;
-		const next = Math.max(0, Math.min(MAX_LINES, space.mark.attrs.lines + delta));
-		view.dispatch(
-			view.state.tr.removeMark(space.from, space.to, type).addMark(space.from, space.to, type.create({ lines: next }))
-		);
-	};
-	return new Plugin({
-		props: {
-			decorations: (state) =>
-				DecorationSet.create(
-					state.doc,
-					writingSpaces(state.doc, type).map(({ mark, to }) => {
-						const lines: number = mark.attrs.lines;
-						return Decoration.widget(
-							to,
-							(view, getPos) => {
-								const el = document.createElement('span');
-								el.className = 'write-lines';
-								el.contentEditable = 'false';
-								const at = () => getPos() ?? -1;
-								el.append(
-									button('−', lines > 1 ? 'One line less' : 'Make it a fill-in blank', () => change(view, at(), -1)),
-									` ${lines} ${lines === 1 ? 'line' : 'lines'} `,
-									button('+', 'One line more', () => change(view, at(), 1))
-								);
-								if (lines >= MAX_LINES) (el.lastChild as HTMLButtonElement).disabled = true;
-								return el;
-							},
-							{ side: -1, marks: [mark], key: `write-lines:${lines}`, ignoreSelection: true, stopEvent: () => true }
-						);
-					})
-				)
-		}
-	});
-});
 
 /**
  * Enter in an outline, where a list would split or lift the item and restart
@@ -380,7 +260,7 @@ const noteIcon = svg(
 	'Teacher note — hidden on handouts',
 	'M200-200h360v-200h200v-360H200v560Zm0 80q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v400L600-120H200Zm80-280v-80h200v80H280Zm0-160v-80h400v80H280Zm-80 360v-560 560Z'
 );
-const blankIcon = svg('Fill-in blank — the answer is hidden on handouts. Enter inside it adds a line of writing space', 'M160-200v-80h640v80H160Z');
+const blankIcon = svg('Fill-in blank — the answer is hidden on handouts', 'M160-200v-80h640v80H160Z');
 const outlineIcon = svg(
 	'Outline — lists inside are numbered I. a. 1. by depth',
 	'M120-120v-80h720v80H120Zm280-160v-80h440v80H400Zm0-160v-80h440v80H400Zm-160-160v-80h600v80H240ZM120-760v-80h720v80H120Z'
@@ -529,14 +409,13 @@ export async function createEditor(
 			)
 		)
 		.use(curriculumRemark)
+		.use(spacesRemark)
 		.use(tightListItemSchema)
 		.use(teacherNoteSchema)
 		.use(blankSchema)
 		.use(outlineSchema)
 		.use(noteInputRule)
 		.use(blankInputRule)
-		.use(blankKeymap)
-		.use(spaceControls)
 		.use(outlineKeymap)
 		.use(toggleTeacherNoteCommand)
 		.use(toggleBlankCommand)

@@ -148,6 +148,74 @@ export function remarkCurriculum() {
 	return (tree: MdNode) => walk(tree);
 }
 
+/**
+ * Writing space as the editor makes it, run after remarkCurriculum. Space below
+ * an item is typed in the editor as empty lines, so `[[n: answer]]` — as the
+ * importer and the outline generator write it — becomes the same: the answer
+ * as a teacher note where the space was, and n empty lines below its paragraph,
+ * to type into or delete like any other. The handout drops the note and keeps
+ * the lines, as it kept the space.
+ *
+ * An empty line is an empty paragraph, as Milkdown holds one once it has read
+ * the `<br />` it writes. A space whose paragraph can't have lines below it — in
+ * a heading or a table cell — is left a fill-in blank.
+ */
+export function remarkSpacesAsLines() {
+	return (tree: MdNode) => spacesAsLines(tree);
+}
+
+const emptyLine = (): MdNode => ({ type: 'paragraph', children: [] });
+const isBlankText = (n: MdNode) => n.type === 'text' && !n.value?.trim();
+
+function spacesAsLines(node: MdNode) {
+	if (!node.children || OPAQUE.has(node.type)) return;
+	const out: MdNode[] = [];
+	for (const child of node.children) {
+		spacesAsLines(child);
+		const lines = child.type === 'paragraph' ? unspace(child) : 0;
+		if (!lines || child.children!.some((c) => !isBlankText(c))) out.push(child);
+		for (let i = 0; i < lines; i++) out.push(emptyLine());
+	}
+	node.children = out;
+	if (node.type !== 'paragraph')
+		for (const c of node.children) if (c.type === 'blank' && c.lines) c.lines = 0;
+}
+
+/**
+ * Takes the writing spaces out of a paragraph, each answer left as a note in
+ * its place; returns their lines. A note beside one is joined to it with a
+ * space, as the editor would run two notes together into one.
+ */
+function unspace(paragraph: MdNode): number {
+	let lines = 0;
+	const out: MdNode[] = [];
+	const made = new Set<MdNode>();
+	for (const c of paragraph.children!) {
+		if (c.type !== 'blank' || !c.lines) {
+			const last = out[out.length - 1];
+			if (c.type === 'teacherNote' && last?.type === 'teacherNote' && made.has(last))
+				last.children!.push(text(' '), ...c.children!);
+			else out.push(c);
+			continue;
+		}
+		lines += c.lines;
+		const answer = c.children ?? [];
+		if (!answer.some((a) => !isBlankText(a))) continue;
+		const last = out[out.length - 1];
+		if (last?.type === 'teacherNote') last.children!.push(text(' '), ...answer);
+		else out.push(note(answer));
+		made.add(out[out.length - 1]);
+	}
+	// "Show work: " ends in a space once its space is gone, which would be written `&#x20;`.
+	const last = out[out.length - 1];
+	if (lines && last?.type === 'text') {
+		last.value = last.value!.trimEnd();
+		if (!last.value) out.pop();
+	}
+	paragraph.children = out;
+	return Math.min(lines, MAX_LINES);
+}
+
 /*
  * Printing. The handlers follow mdast-util-to-markdown's shape; its types are
  * not a dependency of ours, so just enough of them is spelled out here.
