@@ -40,8 +40,8 @@ import {
 } from '@milkdown/kit/preset/commonmark';
 import { markRule } from '@milkdown/kit/prose';
 import { toggleMark, wrapIn } from '@milkdown/kit/prose/commands';
-import { Slice, type MarkType, type Node as PMNode } from '@milkdown/kit/prose/model';
-import { Plugin, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
+import { Slice, type Mark, type MarkType, type Node as PMNode } from '@milkdown/kit/prose/model';
+import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
 import { $command, $inputRule, $markSchema, $nodeSchema, $prose, $remark, $shortcut } from '@milkdown/kit/utils';
 import { renderGraph } from '$lib/graph';
 import { curriculumHandlers, emptyLineJoin, prepareMarkdown, remarkCurriculum, remarkSpacesAsLines } from './remark';
@@ -72,6 +72,8 @@ export const teacherNoteSchema = $markSchema('teacher_note', () => ({
 }));
 
 export const blankSchema = $markSchema('blank', () => ({
+	// Text typed just after a blank is not its answer; blankTyping keeps an answer being typed in.
+	inclusive: false,
 	// A writing space pasted from the reader comes in as a fill-in blank: space here is empty lines.
 	parseDOM: [{ tag: 'span.blank' }, { tag: 'span.write' }],
 	toDOM: () => ['span', { class: 'blank' }, 0],
@@ -187,6 +189,82 @@ export const toggleTeacherNoteCommand = $command(
 export const toggleBlankCommand = $command('ToggleBlank', (ctx) => () => markCommand(blankSchema.type(ctx), 'answer'));
 
 /**
+ * A blank ends where its answer does: the cursor just after one types outside
+ * it, as just after a link. Except while the answer is being written — typed
+ * over the placeholder, typed on from inside, or the cursor moved to its end
+ * from within — when the cursor is on the inside of that end, and what is
+ * typed goes into the answer. The plugin's state is that position, or null.
+ */
+const blankTypingKey = new PluginKey<number | null>('blankTyping');
+
+const blankTyping = $prose((ctx) => {
+	const type = blankSchema.type(ctx);
+	const blankAt = (state: EditorState, pos: number) => {
+		const $pos = state.doc.resolve(pos);
+		return { before: type.isInSet($pos.nodeBefore?.marks ?? []), after: type.isInSet($pos.nodeAfter?.marks ?? []) };
+	};
+	return new Plugin<number | null>({
+		key: blankTypingKey,
+		state: {
+			init: () => null,
+			apply: (tr, value, old, state) => {
+				const meta = tr.getMeta(blankTypingKey);
+				if (meta !== undefined) return meta;
+				const { empty, head } = state.selection;
+				if (!empty) return null;
+				const here = blankAt(state, head);
+				if (!here.before || here.after?.eq(here.before)) return null; // not at the end of a blank
+				const from = old.selection.head;
+				// Still there: after a Backspace, or a selection update that didn't move the cursor.
+				if (value !== null && tr.mapping.map(value, -1) === head && (tr.docChanged || from === head)) return head;
+				// Moved right to the end from inside the same blank (quick key presses can arrive as one move).
+				if (tr.docChanged || from >= head) return null;
+				const mark = here.before;
+				const was = blankAt(old, from);
+				if (!was.before?.eq(mark) || !was.after?.eq(mark)) return null;
+				let same = true;
+				state.doc.nodesBetween(from, head, (node) => {
+					if (node.isInline && !mark.isInSet(node.marks)) same = false;
+				});
+				return same ? head : null;
+			}
+		},
+		props: {
+			// → or End on the inside of an answer's end steps out of it, the cursor staying put.
+			handleKeyDown: (view, event) => {
+				if ((event.key !== 'ArrowRight' && event.key !== 'End') || event.shiftKey || event.metaKey || event.altKey || event.ctrlKey)
+					return false;
+				const at = blankTypingKey.getState(view.state);
+				const { $head } = view.state.selection;
+				if (at === null || at !== $head.pos) return false;
+				// End only where it couldn't move on anyway: the answer ends the paragraph.
+				if (event.key === 'End' && $head.parentOffset !== $head.parent.content.size) return false;
+				view.dispatch(view.state.tr.setMeta(blankTypingKey, null));
+				return true;
+			},
+			handleTextInput: (view, from, to, text) => {
+				const { state } = view;
+				let mark: Mark | undefined;
+				if (from < to) {
+					// Typing over all or part of an answer (marksAcross would drop a mark ending at `to`).
+					const over = blankAt(state, from).after;
+					let whole = !!over;
+					state.doc.nodesBetween(from, to, (node) => {
+						if (node.isInline && !over?.isInSet(node.marks)) whole = false;
+					});
+					if (whole) mark = over;
+				} else if (blankTypingKey.getState(state) === from) mark = blankAt(state, from).before;
+				if (!mark) return false;
+				const tr = state.tr.insertText(text, from, to);
+				tr.addMark(from, from + text.length, mark);
+				view.dispatch(tr.setMeta(blankTypingKey, from + text.length).scrollIntoView());
+				return true;
+			}
+		}
+	});
+});
+
+/**
  * Enter in an outline, where a list would split or lift the item and restart
  * the numbering after it (Shift-Tab still lifts):
  *
@@ -260,7 +338,7 @@ const noteIcon = svg(
 	'Teacher note — hidden on handouts',
 	'M200-200h360v-200h200v-360H200v560Zm0 80q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v400L600-120H200Zm80-280v-80h200v80H280Zm0-160v-80h400v80H280Zm-80 360v-560 560Z'
 );
-const blankIcon = svg('Fill-in blank — the answer is hidden on handouts', 'M160-200v-80h640v80H160Z');
+const blankIcon = svg('Fill-in blank — the answer is hidden on handouts. → at the end of an answer steps out of it', 'M160-200v-80h640v80H160Z');
 const outlineIcon = svg(
 	'Outline — lists inside are numbered I. a. 1. by depth',
 	'M120-120v-80h720v80H120Zm280-160v-80h440v80H400Zm0-160v-80h440v80H400Zm-160-160v-80h600v80H240ZM120-760v-80h720v80H120Z'
@@ -416,6 +494,7 @@ export async function createEditor(
 		.use(outlineSchema)
 		.use(noteInputRule)
 		.use(blankInputRule)
+		.use(blankTyping)
 		.use(outlineKeymap)
 		.use(toggleTeacherNoteCommand)
 		.use(toggleBlankCommand)
