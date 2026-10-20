@@ -10,8 +10,9 @@
  * The table button asks for a new table's rows, columns and width — or, in a
  * table, for its width (TableDialog); Crepe's handles add and drop rows after.
  *
- * Math is Crepe's LaTeX feature (KaTeX); a ```graph fence is a code block whose
- * preview is drawn by $lib/graph, as the reader draws it.
+ * Math is Crepe's LaTeX feature (KaTeX), kept in the note or blank it is typed
+ * in (mathKeepsMarks); a ```graph fence is a code block whose preview is drawn
+ * by $lib/graph, as the reader draws it.
  *
  * Space to write in is empty lines, typed and deleted like any other line. A
  * writing space in the Markdown (`[[n: answer]]`, as imports and generated
@@ -54,6 +55,7 @@ import { mount, unmount } from 'svelte';
 import TableDialog, { type TableChoice } from '$lib/components/TableDialog.svelte';
 import { renderGraph } from '$lib/graph';
 import { clampWidth } from '$lib/markdown';
+import { keepMathMarks } from './mathMarks';
 import { curriculumHandlers, emptyLineJoin, prepareMarkdown, remarkCurriculum, remarkSpacesAsLines } from './remark';
 
 /** Holds a place for an empty answer: a mark needs text, and a plain space would be trimmed off. */
@@ -254,6 +256,9 @@ export const toggleTeacherNoteCommand = $command(
 	(ctx) => () => markCommand(teacherNoteSchema.type(ctx), 'remind myself to…')
 );
 export const toggleBlankCommand = $command('ToggleBlank', (ctx) => () => markCommand(blankSchema.type(ctx), 'answer'));
+
+/** Math typed in a note or blank stays in it ($lib/editor/mathMarks). */
+const mathKeepsMarks = $prose(() => new Plugin({ appendTransaction: keepMathMarks }));
 
 /**
  * A blank ends where its answer does: the cursor just after one types outside
@@ -661,6 +666,7 @@ export async function createEditor(
 		.use(noteInputRule)
 		.use(blankInputRule)
 		.use(blankTyping)
+		.use(mathKeepsMarks)
 		.use(outlineKeymap)
 		.use(toggleTeacherNoteCommand)
 		.use(toggleBlankCommand)

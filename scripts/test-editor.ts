@@ -14,6 +14,9 @@ import { unified } from 'unified';
 import { prepareMarkdown, remarkCurriculum, remarkSpacesAsLines, stringifyOptions } from '../src/lib/editor/remark.ts';
 import { renderMarkdown } from '../src/lib/markdown.ts';
 import { remapRegion } from '../src/lib/outlineRegion.ts';
+import { Schema } from '@milkdown/kit/prose/model';
+import { EditorState } from '@milkdown/kit/prose/state';
+import { keepMathMarks } from '../src/lib/editor/mathMarks.ts';
 
 let passed = 0;
 let failed = 0;
@@ -243,6 +246,35 @@ console.log('Table widths');
 	check('the width line is gone from the tree', !find(tree(CASES['table with a width']) as unknown as Node, 'text').some((t) => t.value?.includes('width=')));
 	check('a width out of range is brought into it', find(tree('{width=250%}\n\n| a |\n| - |'), 'table')[0]?.width === 100);
 	check('without a table after it, the line stays', find(tree(CASES['width line with no table after it']) as unknown as Node, 'table').length === 0 && roundTrip(CASES['width line with no table after it']).startsWith('{width=60%}'));
+}
+
+console.log('Math typed in a note stays in it');
+{
+	const schema = new Schema({
+		nodes: {
+			doc: { content: 'paragraph+' },
+			paragraph: { content: 'inline*', group: 'block' },
+			text: { group: 'inline' },
+			math_inline: { group: 'inline', inline: true, atom: true, attrs: { value: { default: '' } } }
+		},
+		marks: { teacher_note: {}, strong: {} }
+	});
+	const note = schema.marks.teacher_note.create();
+	const doc = schema.node('doc', null, [
+		schema.node('paragraph', null, [schema.text('Intro '), schema.text('a note $y', [note]), schema.text(' after')])
+	]);
+	const state = EditorState.create({ doc });
+	// What Crepe's input rule does on the closing `$`: the `$y` typed so far, in the note, becomes math with no marks.
+	const start = 1 + 'Intro a note '.length;
+	const typed = state.tr.replaceRangeWith(start, start + 2, schema.nodes.math_inline.create({ value: 'y' }));
+	const after = state.apply(typed);
+	const fix = keepMathMarks([typed], state, after);
+	const math = fix?.doc.nodeAt(start);
+	check('the math takes the note', math?.type.name === 'math_inline' && !!note.isInSet(math.marks), JSON.stringify(math?.toJSON()));
+	const plain = state.tr.replaceRangeWith(2, 4, schema.nodes.math_inline.create({ value: 'n' }));
+	check('math typed outside a note is left alone', keepMathMarks([plain], state, state.apply(plain)) === null);
+	const mixed = state.tr.replaceRangeWith(5, start + 2, schema.nodes.math_inline.create({ value: 'x' }));
+	check('…and so is math over text only partly in one', keepMathMarks([mixed], state, state.apply(mixed)) === null);
 }
 
 console.log('The generated outline is followed through a rewrite');
